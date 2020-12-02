@@ -1,0 +1,7 @@
+# CODEOWNERS: https://help.github.com/articles/about-codeowners/
+
+# repo owners
+*      @dt665m 
+
+# documentation owners
+/docs/ @dt665m 

@@ -1,0 +1,93 @@
+# We will generally lock on MINOR versions to allow for some patch wiggle room at the library 
+# importer, in case some small bug fix happens in the patches
+[package]
+name = "atb"
+version = "0.1.0"
+authors = ["Denis Tsai <denistsai@aetheras.io>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4"
+env_logger = "0.8"
+ansi_term = "0.12"
+uuid = { version = "0.8", features = ["serde", "v4", "v5"] }
+chrono = "0.4"
+thiserror = "1"
+anyhow = "1"
+
+# HTTP 
+actix = { version = "0.10", optional = true }
+actix-web = { version = "3.3", optional = true }
+actix-web-httpauth = { version = "0.5", optional = true }
+actix-cors = { version = "0.5", optional = true }
+actix-threadpool = { version = "0.3", optional = true }
+jsonwebtoken = {version = "7.2", optional = true }
+
+# Graphql
+juniper = { git = "https://github.com/graphql-rust/juniper", rev = "f3170c7adf4405cc119d2129f78a591fe2fcd32b", optional = true }
+juniper_actix = { git = "https://github.com/graphql-rust/juniper", rev = "f3170c7adf4405cc119d2129f78a591fe2fcd32b", optional = true }
+dataloader = { version = "0.13", optional = true }
+
+# Eventsourcing
+lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "6ecdb9c06a7495d0acd4176676714adc367257ac", optional = true }
+lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "6ecdb9c06a7495d0acd4176676714adc367257ac", optional = true }
+lucidstream-inmemory = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "6ecdb9c06a7495d0acd4176676714adc367257ac", optional = true }
+
+# Sql
+sqlx = { version = "0.4", default-features = false,  optional = true }
+
+# Fixtures
+fake = { version = "2.2", optional = true }
+lazy_static = {version = "1.4.0", optional = true }
+
+# Miscellaneous 
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true } 
+
+
+# Nothing by default
+[features]
+default = []
+all = [
+  "http",
+  "graphql",
+  "jwt",
+  "sql",
+  "eventsourcing",
+  "fixtures",
+]
+http = [
+  "actix",
+  "actix-web",
+  "actix-web-httpauth",
+  "actix-cors",
+  "actix-threadpool",
+]
+graphql = [
+  "juniper/uuid",
+  "juniper_actix",
+  "dataloader",
+]
+jwt = [
+  "serde",
+  "serde_json",
+  "jsonwebtoken",
+]
+sql = [
+  "sqlx/runtime-tokio-rustls",
+  "sqlx/macros",
+  "sqlx/postgres",
+  "sqlx/uuid",
+  "sqlx/chrono",
+  "sqlx/json",
+]
+eventsourcing = [
+  "lucidstream",
+  "lucidstream-ges",
+  "lucidstream-inmemory"
+]
+fixtures = [
+  "lazy_static",
+  "fake/derive",
+  "jsonwebtoken",
+]
