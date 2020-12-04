@@ -1,12 +1,12 @@
-use chrono::{Duration, Utc};
+use crate::types::{DateTime, Duration, Utc, Uuid};
+
 use jsonwebtoken::{self as jwt, crypto, errors::Error as JwtError, Algorithm, Header};
 use lazy_static::lazy_static;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use uuid::Uuid;
 
+#[cfg(feature = "http")]
+pub use actix_utils::*;
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
-
-pub type DateTime = chrono::DateTime<Utc>;
 
 lazy_static! {
     pub static ref HEADER_RS256: Header = Header::new(Algorithm::RS256);
@@ -14,7 +14,8 @@ lazy_static! {
 }
 
 /// Takes the result of a rsplit and ensure we only get 2 parts
-/// Errors if we don't
+/// this is taken from the jsonwebtoken crate for quick implementation.  
+/// I think this is a totally unecessary "lispy" way of splitting
 macro_rules! expect_two {
     ($iter:expr) => {{
         let mut i = $iter;
@@ -58,20 +59,22 @@ impl Builder {
 
     /// add custom serialization values on top of the default
     pub fn custom(mut self, custom: serde_json::Value) -> Self {
-        if custom.get("iss").is_some()
-            || custom.get("sub").is_some()
-            || custom.get("iat").is_some()
-            || custom.get("exp").is_some()
-            || custom.get("nbf").is_some()
-            || custom.get("aud").is_some()
-        {
-            panic!("invalid duplicate of custom claims")
-        }
         self.0.custom = Some(custom);
         self
     }
-    pub fn build(self) -> Claims {
-        self.0
+    pub fn build(self) -> Option<Claims> {
+        if let Some(ref custom) = self.0.custom {
+            if custom.get("iss").is_some()
+                || custom.get("sub").is_some()
+                || custom.get("iat").is_some()
+                || custom.get("exp").is_some()
+                || custom.get("nbf").is_some()
+                || custom.get("aud").is_some()
+            {
+                return None;
+            }
+        }
+        Some(self.0)
     }
 }
 
@@ -148,16 +151,17 @@ impl Claims {
 
     // #TODO might be beneficial to get the error reason for debugging.
     // right now we will keep the same optional interface to get things going quickly
-    pub fn decode<F>(token: &str, public_key: &DecodingKey, validate: F) -> Option<Self>
-    where
-        F: FnOnce(&Header, &Claims) -> bool,
-    {
+    pub fn decode<F: Validator>(
+        token: &str,
+        public_key: &DecodingKey,
+        validator: F,
+    ) -> Option<Self> {
         let (signature, message) = expect_two!(token.rsplitn(2, '.'));
         let (claims, header) = expect_two!(message.rsplitn(2, '.'));
         let header: Header = b64_decode_json(&header)?;
         let claims: Claims = b64_decode_json(&claims)?;
 
-        if !validate(&header, &claims)
+        if !validator.validate(&header, &claims)
             || !crypto::verify(signature, message, public_key, header.alg).ok()?
         {
             None
@@ -184,6 +188,107 @@ pub fn validate_hmac256(header: &Header, claims: &Claims) -> bool {
     const LEEWAY: i64 = 0;
     let now = Utc::now().timestamp();
     HEADER_HS256.alg == header.alg && claims.exp < now - LEEWAY
+}
+
+pub trait Validator {
+    fn validate(self, header: &Header, claims: &Claims) -> bool;
+}
+
+impl<F> Validator for F
+where
+    F: FnOnce(&Header, &Claims) -> bool,
+{
+    fn validate(self, header: &Header, claims: &Claims) -> bool {
+        self(header, claims)
+    }
+}
+
+#[cfg(feature = "http")]
+mod actix_utils {
+    use super::*;
+
+    use std::marker::PhantomData;
+    use std::ops::Deref;
+
+    use actix_web::cookie::Cookie;
+    use actix_web::dev::Payload;
+    use actix_web::error::ErrorUnauthorized;
+    use actix_web::{Error as ActixError, FromRequest, HttpMessage, HttpRequest};
+    use futures::future;
+
+    pub trait JwtMeta {
+        fn extractor_parts() -> (&'static str, &'static str);
+
+        fn validate(header: &Header, claims: &Claims) -> bool;
+
+        fn decoding_key() -> &'static DecodingKey<'static>;
+    }
+
+    pub struct ClaimsFromCookies<T: JwtMeta> {
+        inner: Claims,
+        marker: PhantomData<T>,
+    }
+
+    impl<T: JwtMeta> Deref for ClaimsFromCookies<T> {
+        type Target = Claims;
+
+        fn deref(&self) -> &Self::Target {
+            &self.inner
+        }
+    }
+
+    impl<T: JwtMeta> FromRequest for ClaimsFromCookies<T> {
+        type Error = ActixError;
+        type Future = future::Ready<Result<Self, ActixError>>;
+        type Config = ();
+
+        fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+            let (claim_part_key, sig_part_key) = T::extractor_parts();
+            match (req.cookie(claim_part_key), req.cookie(sig_part_key)) {
+                (Some(token), Some(sig)) => {
+                    let jwt = format!("{}.{}", token.value(), sig.value());
+                    Claims::decode(&jwt, T::decoding_key(), T::validate)
+                        .ok_or(ErrorUnauthorized(""))
+                }
+                _ => Err(ErrorUnauthorized("")),
+            }
+            .map_or_else(future::err, |claims| {
+                future::ok(ClaimsFromCookies {
+                    inner: claims,
+                    marker: PhantomData,
+                })
+            })
+        }
+    }
+
+    pub fn to_cookie_parts<'a, T: JwtMeta>(
+        jwt: &'a str,
+        fqdn: &'a str,
+        debug: bool,
+    ) -> Option<(Cookie<'a>, Cookie<'a>)> {
+        let (token_part, sig_part) = jwt.rfind('.').map(|dot_position| {
+            (
+                jwt[..dot_position].to_owned(),
+                jwt[dot_position + 1..].to_owned(),
+            )
+        })?;
+
+        let (claim_part_key, sig_part_key) = T::extractor_parts();
+        let claim_part = Cookie::build(claim_part_key, token_part)
+            .domain(fqdn)
+            .path("/")
+            .secure(false)
+            .http_only(false)
+            .finish();
+        let sig_part = Cookie::build(sig_part_key, sig_part)
+            .domain(fqdn)
+            .path("/")
+            .secure(!debug)
+            .http_only(!debug)
+            .finish();
+
+        Some((claim_part, sig_part))
+    }
 }
 
 #[cfg(test)]
