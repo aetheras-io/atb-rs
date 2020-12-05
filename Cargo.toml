@@ -15,7 +15,8 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 anyhow = "1"
 futures = "0.3"
-lazy_static = "1.4.0"
+lazy_static = "1.4"
+byteorder = "1.3" 
 
 # HTTP 
 actix = { version = "0.10", optional = true }
@@ -48,7 +49,7 @@ base64 = { version = "0.12", optional = true }
 
 # Nothing by default
 [features]
-default = []
+default = ["all"]
 all = [
   "http",
   "graphql",

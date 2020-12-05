@@ -1,3 +1,14 @@
+// #HACK this brings juniper into crate level global scope because apparently
+// juniper's macros expect the base juniper crate to be at root instead of importing juniper from
+// itself?
+// Juniper users will need to do
+// ```
+// #[macro_use]
+// extern crate atb as juniper
+// ```
+#[cfg(feature = "graphql")]
+pub use juniper::*;
+
 pub mod logging;
 pub mod types;
 
@@ -25,13 +36,7 @@ pub mod http {
 }
 
 #[cfg(feature = "graphql")]
-pub mod graphql {
-    pub use dataloader;
-    pub use juniper;
-
-    #[cfg(feature = "http")]
-    pub use juniper_actix;
-}
+pub mod graphql;
 
 #[cfg(feature = "sql")]
 pub mod sql {
@@ -59,7 +64,7 @@ pub mod prelude {
     pub use crate::jwt;
 
     #[cfg(feature = "sql")]
-    pub use sqlx;
+    pub use crate::sql::*;
 
     pub use anyhow;
     pub use chrono;

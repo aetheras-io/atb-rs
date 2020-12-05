@@ -1,12 +1,12 @@
 use crate::types::{DateTime, Duration, Utc, Uuid};
 
-use jsonwebtoken::{self as jwt, crypto, errors::Error as JwtError, Algorithm, Header};
+use jsonwebtoken::{self as jwt, crypto, errors::Error as JwtError, Algorithm};
 use lazy_static::lazy_static;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[cfg(feature = "http")]
 pub use actix_utils::*;
-pub use jsonwebtoken::{DecodingKey, EncodingKey};
+pub use jsonwebtoken::{DecodingKey, EncodingKey, Header};
 
 lazy_static! {
     pub static ref HEADER_RS256: Header = Header::new(Algorithm::RS256);
@@ -145,8 +145,8 @@ impl Claims {
         self.custom.as_ref()
     }
 
-    pub fn encode(&self, header: &Header, private_key: &EncodingKey) -> Result<String, JwtError> {
-        jwt::encode(header, self, private_key)
+    pub fn encode<T: JwtMeta>(&self) -> Result<String, JwtError> {
+        jwt::encode(T::header(), self, T::encoding_key())
     }
 
     // #TODO might be beneficial to get the error reason for debugging.
@@ -190,6 +190,24 @@ pub fn validate_hmac256(header: &Header, claims: &Claims) -> bool {
     HEADER_HS256.alg == header.alg && claims.exp < now - LEEWAY
 }
 
+pub trait JwtMeta {
+    fn cookie_parts() -> (&'static str, &'static str) {
+        ("access_token", "access_token_sig")
+    }
+
+    fn validate(header: &Header, claims: &Claims) -> bool {
+        validate_rsa256(header, claims)
+    }
+
+    fn header() -> &'static Header {
+        &HEADER_RS256
+    }
+
+    fn encoding_key() -> &'static EncodingKey;
+
+    fn decoding_key() -> &'static DecodingKey<'static>;
+}
+
 pub trait Validator {
     fn validate(self, header: &Header, claims: &Claims) -> bool;
 }
@@ -216,17 +234,15 @@ mod actix_utils {
     use actix_web::{Error as ActixError, FromRequest, HttpMessage, HttpRequest};
     use futures::future;
 
-    pub trait JwtMeta {
-        fn extractor_parts() -> (&'static str, &'static str);
-
-        fn validate(header: &Header, claims: &Claims) -> bool;
-
-        fn decoding_key() -> &'static DecodingKey<'static>;
-    }
-
     pub struct ClaimsFromCookies<T: JwtMeta> {
         inner: Claims,
         marker: PhantomData<T>,
+    }
+
+    impl<T: JwtMeta> ClaimsFromCookies<T> {
+        fn into_inner(self) -> Claims {
+            self.inner
+        }
     }
 
     impl<T: JwtMeta> Deref for ClaimsFromCookies<T> {
@@ -243,7 +259,7 @@ mod actix_utils {
         type Config = ();
 
         fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-            let (claim_part_key, sig_part_key) = T::extractor_parts();
+            let (claim_part_key, sig_part_key) = T::cookie_parts();
             match (req.cookie(claim_part_key), req.cookie(sig_part_key)) {
                 (Some(token), Some(sig)) => {
                     let jwt = format!("{}.{}", token.value(), sig.value());
@@ -262,10 +278,10 @@ mod actix_utils {
     }
 
     pub fn to_cookie_parts<'a, T: JwtMeta>(
-        jwt: &'a str,
+        jwt: String,
         fqdn: &'a str,
         debug: bool,
-    ) -> Option<(Cookie<'a>, Cookie<'a>)> {
+    ) -> Option<(Cookie, Cookie)> {
         let (token_part, sig_part) = jwt.rfind('.').map(|dot_position| {
             (
                 jwt[..dot_position].to_owned(),
@@ -273,7 +289,7 @@ mod actix_utils {
             )
         })?;
 
-        let (claim_part_key, sig_part_key) = T::extractor_parts();
+        let (claim_part_key, sig_part_key) = T::cookie_parts();
         let claim_part = Cookie::build(claim_part_key, token_part)
             .domain(fqdn)
             .path("/")
@@ -305,7 +321,7 @@ mod tests {
         let custom = serde_json::json!({
             "hello": "world"
         });
-        let claims = Builder::new(chrono::Duration::days(1))
+        let _claims = Builder::new(chrono::Duration::days(1))
             .issuer("hello")
             .subject(Uuid::new_v4().to_string())
             .custom(custom)
