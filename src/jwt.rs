@@ -151,18 +151,15 @@ impl Claims {
 
     // #TODO might be beneficial to get the error reason for debugging.
     // right now we will keep the same optional interface to get things going quickly
-    pub fn decode<F: Validator>(
-        token: &str,
-        public_key: &DecodingKey,
-        validator: F,
-    ) -> Option<Self> {
+    pub fn decode<T: JwtMeta>(token: &str) -> Option<Self> {
         let (signature, message) = expect_two!(token.rsplitn(2, '.'));
         let (claims, header) = expect_two!(message.rsplitn(2, '.'));
         let header: Header = b64_decode_json(&header)?;
         let claims: Claims = b64_decode_json(&claims)?;
 
-        if !validator.validate(&header, &claims)
-            || !crypto::verify(signature, message, public_key, header.alg).ok()?
+        if T::header().alg != header.alg
+            || !T::validate(&claims)
+            || !crypto::verify(signature, message, T::decoding_key(), header.alg).ok()?
         {
             None
         } else {
@@ -178,16 +175,10 @@ fn b64_decode_json<T: DeserializeOwned>(input: &str) -> Option<T> {
         .and_then(|b| serde_json::from_slice::<T>(&b).ok())
 }
 
-pub fn validate_rsa256(header: &Header, claims: &Claims) -> bool {
+pub fn validate_rsa256(claims: &Claims) -> bool {
     const LEEWAY: i64 = 0;
     let now = Utc::now().timestamp();
-    HEADER_RS256.alg == header.alg && claims.exp < now - LEEWAY
-}
-
-pub fn validate_hmac256(header: &Header, claims: &Claims) -> bool {
-    const LEEWAY: i64 = 0;
-    let now = Utc::now().timestamp();
-    HEADER_HS256.alg == header.alg && claims.exp < now - LEEWAY
+    claims.exp < now - LEEWAY
 }
 
 pub trait JwtMeta {
@@ -195,8 +186,8 @@ pub trait JwtMeta {
         ("access_token", "access_token_sig")
     }
 
-    fn validate(header: &Header, claims: &Claims) -> bool {
-        validate_rsa256(header, claims)
+    fn validate(claims: &Claims) -> bool {
+        validate_rsa256(claims)
     }
 
     fn header() -> &'static Header {
@@ -240,7 +231,7 @@ mod actix_utils {
     }
 
     impl<T: JwtMeta> ClaimsFromCookies<T> {
-        fn into_inner(self) -> Claims {
+        pub fn into_inner(self) -> Claims {
             self.inner
         }
     }
@@ -263,8 +254,7 @@ mod actix_utils {
             match (req.cookie(claim_part_key), req.cookie(sig_part_key)) {
                 (Some(token), Some(sig)) => {
                     let jwt = format!("{}.{}", token.value(), sig.value());
-                    Claims::decode(&jwt, T::decoding_key(), T::validate)
-                        .ok_or(ErrorUnauthorized(""))
+                    Claims::decode::<T>(&jwt).ok_or(ErrorUnauthorized(""))
                 }
                 _ => Err(ErrorUnauthorized("")),
             }

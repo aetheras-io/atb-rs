@@ -6,6 +6,9 @@
 // #[macro_use]
 // extern crate atb as juniper
 // ```
+// In the end, macro heavy crates may not be suitable for this kind of library aggregation.  We
+// currently do not use any macros for sqlx but if they also don't have sanitized use statements,
+// then we would be SOL
 #[cfg(feature = "graphql")]
 pub use juniper::*;
 
@@ -17,14 +20,16 @@ pub mod fixtures;
 #[cfg(feature = "jwt")]
 pub mod jwt;
 
-// non-feature gated libs
-pub use anyhow;
-pub use chrono;
-pub use futures;
-pub use lazy_static;
-pub use log;
-pub use thiserror;
-pub use uuid;
+pub mod includes {
+    // non-feature gated libs
+    pub use anyhow;
+    pub use chrono;
+    pub use futures;
+    pub use lazy_static;
+    pub use log;
+    pub use thiserror;
+    pub use uuid;
+}
 
 #[cfg(feature = "http")]
 pub mod http {
@@ -66,11 +71,5 @@ pub mod prelude {
     #[cfg(feature = "sql")]
     pub use crate::sql::*;
 
-    pub use anyhow;
-    pub use chrono;
-    pub use futures;
-    pub use lazy_static;
-    pub use log;
-    pub use thiserror;
-    pub use uuid;
+    pub use crate::includes::*;
 }

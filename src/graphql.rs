@@ -5,7 +5,6 @@
 //! be pretty difficult to debug but keep an eye out on it and if there is time, we can take a look
 //! at their proc macros to see how our use case can be supported.
 pub use dataloader;
-pub use juniper;
 
 #[cfg(feature = "http")]
 pub use juniper_actix;
@@ -71,7 +70,7 @@ pub mod spec {
         ($connection:ident, $edge:ident, $type:ty, $context:ty) => {
             /// Relay Connections spec'd `Edge`
             /// https://relay.dev/graphql/connections.htm
-            #[derive($crate::graphql::juniper::GraphQLObject)]
+            #[derive(juniper::GraphQLObject)]
             #[graphql(context = $context)]
             pub struct $edge {
                 pub node: $type,
@@ -80,7 +79,7 @@ pub mod spec {
 
             /// Relay Connections spec'd `Connection`
             /// https://relay.dev/graphql/connections.htm
-            #[derive($crate::graphql::juniper::GraphQLObject)]
+            #[derive(juniper::GraphQLObject)]
             #[graphql(context = $context)]
             pub struct $connection {
                 pub edges: Vec<$edge>,
@@ -103,7 +102,7 @@ pub mod spec {
         pub struct Context;
         impl juniper::Context for Context {}
 
-        impl_relay_connection!(UsersConnection, UserEdge, User, Context);
+        impl_relay_connection!(UsersConnection, UserEdge, i32, ());
 
         //#TODO add some tests here
         #[test]
