@@ -71,5 +71,8 @@ pub mod prelude {
     #[cfg(feature = "sql")]
     pub use crate::sql::*;
 
+    #[cfg(feature = "eventsourcing")]
+    pub use crate::eventsourcing::*;
+
     pub use crate::includes::*;
 }
