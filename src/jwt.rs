@@ -199,19 +199,6 @@ pub trait JwtMeta {
     fn decoding_key() -> &'static DecodingKey<'static>;
 }
 
-pub trait Validator {
-    fn validate(self, header: &Header, claims: &Claims) -> bool;
-}
-
-impl<F> Validator for F
-where
-    F: FnOnce(&Header, &Claims) -> bool,
-{
-    fn validate(self, header: &Header, claims: &Claims) -> bool {
-        self(header, claims)
-    }
-}
-
 #[cfg(feature = "http")]
 mod actix_utils {
     use super::*;
