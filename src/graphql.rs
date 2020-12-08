@@ -15,18 +15,6 @@ pub mod spec {
     use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
     use juniper::GraphQLObject;
 
-    /// Graphql Relay Connections PageInfo
-    /// according to the "updated" implementation, "startCursor" and "endCursor"
-    /// should be null when "Edges" is empty.  However, the graphql spec hasn't been updated yet
-    /// https://github.com/rmosolgo/graphql-ruby/pull/2886
-    #[derive(Default, GraphQLObject)]
-    pub struct PageInfo {
-        pub has_previous_page: bool,
-        pub has_next_page: bool,
-        pub start_cursor: Option<String>,
-        pub end_cursor: Option<String>,
-    }
-
     #[derive(thiserror::Error, Debug)]
     pub enum CursorError {
         #[error("Cursor has invalid length")]
@@ -65,6 +53,34 @@ pub mod spec {
         Ok((rdr.read_i64::<BigEndian>()?, rhs))
     }
 
+    /// Graphql Relay Connections PageInfo
+    /// according to the "updated" implementation, "startCursor" and "endCursor"
+    /// should be null when "Edges" is empty.  However, the graphql spec hasn't been updated yet
+    /// https://github.com/rmosolgo/graphql-ruby/pull/2886
+    #[derive(Default, GraphQLObject)]
+    pub struct PageInfo {
+        pub has_previous_page: bool,
+        pub has_next_page: bool,
+        pub start_cursor: Option<String>,
+        pub end_cursor: Option<String>,
+    }
+
+    /// A trait that a Connections Node must implement in order to be used in connections
+    pub trait IntoEdge<T> {
+        fn index(&self) -> i64;
+
+        fn index_field() -> &'static str;
+
+        fn cursor_key() -> &'static str;
+
+        fn into_edge(self, cursor: String) -> T;
+    }
+
+    /// A trait implemented by edges that returns its cursor
+    pub trait EdgeCursor {
+        fn cursor(&self) -> &str;
+    }
+
     #[macro_export]
     macro_rules! impl_relay_connection {
         ($connection:ident, $edge:ident, $type:ty, $context:ty) => {
@@ -75,6 +91,12 @@ pub mod spec {
             pub struct $edge {
                 pub node: $type,
                 pub cursor: String,
+            }
+
+            impl $crate::graphql::spec::EdgeCursor for $edge {
+                fn cursor(&self) -> &str {
+                    &self.cursor
+                }
             }
 
             /// Relay Connections spec'd `Connection`
