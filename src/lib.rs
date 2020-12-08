@@ -19,6 +19,8 @@ pub mod types;
 pub mod fixtures;
 #[cfg(feature = "jwt")]
 pub mod jwt;
+#[cfg(feature = "sql")]
+pub mod sql;
 
 pub mod includes {
     // non-feature gated libs
@@ -42,11 +44,6 @@ pub mod http {
 
 #[cfg(feature = "graphql")]
 pub mod graphql;
-
-#[cfg(feature = "sql")]
-pub mod sql {
-    pub use sqlx;
-}
 
 #[cfg(feature = "eventsourcing")]
 pub mod eventsourcing {

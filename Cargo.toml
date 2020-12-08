@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -31,12 +31,13 @@ juniper_actix = { git = "https://github.com/graphql-rust/juniper", rev = "f3170c
 dataloader = { version = "0.13", optional = true }
 
 # Eventsourcing
-lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "9a2b56581676d7be25aef216746f0ae0bc6a67f2", optional = true }
-lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "9a2b56581676d7be25aef216746f0ae0bc6a67f2", optional = true }
-lucidstream-inmemory = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "9a2b56581676d7be25aef216746f0ae0bc6a67f2", optional = true }
+lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "f4aeeddcbded17424ea755d8e1f099cc5a728699", optional = true }
+lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "f4aeeddcbded17424ea755d8e1f099cc5a728699", optional = true }
+lucidstream-inmemory = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "f4aeeddcbded17424ea755d8e1f099cc5a728699", optional = true }
 
 # Sql
-sqlx = { version = "0.4", default-features = false,  optional = true }
+sqlx = { version = "0.4", default-features = false, optional = true }
+quaint = { git = "https://github.com/prisma/quaint", rev = "6efc6f6fb48262b7d9e7e8c4b4a0f52402e1e432", features = ["postgresql", "serde-support", "json", "chrono", "uuid"], optional = true } 
 
 # Fixtures
 fake = { version = "2.2", optional = true }
