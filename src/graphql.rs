@@ -9,6 +9,242 @@ pub use dataloader;
 #[cfg(feature = "http")]
 pub use juniper_actix;
 
+#[cfg(feature = "sql")]
+pub mod connections {
+    use super::spec::*;
+    use crate::sql;
+    use std::convert::Into;
+
+    use quaint::prelude::*;
+    use quaint::visitor::{Postgres, Visitor};
+    use sqlx::{
+        postgres::{PgPool, PgRow},
+        Row,
+    };
+
+    #[derive(thiserror::Error, Debug)]
+    pub enum Error {
+        #[error("Invalid connections query")]
+        InvalidQuery,
+
+        #[error("Connection spec cursor error: {0}")]
+        Cursor(#[from] CursorError),
+
+        #[error("Quaint error: {0}")]
+        Quaint(#[from] quaint::error::Error),
+
+        #[error("Sqlx error: {0}")]
+        Sqlx(#[from] sqlx::Error),
+    }
+
+    pub type Result<T> = std::result::Result<T, Error>;
+
+    /// Generic Connections Helper following graphql relay spec
+    pub async fn get_connection<'a, S, C, T, E, F>(
+        pg_pool: PgPool,
+        first: Option<i32>,
+        after: Option<String>,
+        last: Option<i32>,
+        before: Option<String>,
+        columns: &'a [S],
+        conditions: Option<C>,
+        map_row: F,
+    ) -> Result<(Vec<E>, PageInfo)>
+    where
+        S: AsRef<str>,
+        C: Into<ConditionTree<'a>> + Default + Clone,
+        T: IntoEdge<E> + Send + Sync + Unpin,
+        E: EdgeCursor,
+        F: Fn(PgRow) -> T + Send + Sync + 'static,
+    {
+        let table = T::table();
+        let query_meta = build_raw::<'a, S, C>(
+            table,
+            T::index_field(),
+            first,
+            after,
+            last,
+            before,
+            columns,
+            conditions,
+        )?;
+
+        log::debug!("Connections Query: \n {}", query_meta.sql_statement);
+        log::debug!("Connections Params: \n {:?}", query_meta.parameters);
+        query_raw(pg_pool, map_row, table, query_meta).await
+    }
+
+    /// Raw Query container struct
+    pub struct QueryMeta<'a> {
+        sql_statement: String,
+        parameters: Vec<Value<'a>>,
+        fetch_count: usize,
+        ascending: bool,
+        parse_previous: bool,
+    }
+
+    // #TODO
+    // handle custom order_by.  This is very tricky because if the custom order_by fields allow
+    // duplicates, then the previous_count query becomes way more complicated.  May not be worth
+    // the complexity right now.
+    /// Build a raw connections query based on the graphql spec parameters and custom conditions
+    pub fn build_raw<'a, S, C>(
+        table: &'a str,
+        index_field: &'a str,
+        first: Option<i32>,
+        after: Option<String>,
+        last: Option<i32>,
+        before: Option<String>,
+        columns: &'a [S],
+        conditions: Option<C>,
+    ) -> Result<QueryMeta<'a>>
+    where
+        S: AsRef<str>,
+        C: Into<ConditionTree<'a>> + Default + Clone,
+    {
+        let (over_fetch_count, ascending, maybe_cursor) = match (&first, &last) {
+            (Some(count), None) => Ok((*count as usize + 1, true, after)),
+            (None, Some(count)) => Ok((*count as usize + 1, false, before)),
+            (None, None) => Ok((5, true, None)),
+            _ => Err(Error::InvalidQuery),
+        }?;
+
+        let maybe_cursor = maybe_cursor
+            .map(|c| decode_cursor(c.into_bytes(), table.as_bytes()))
+            .transpose()?;
+
+        let parse_previous = maybe_cursor.is_some();
+        let base_query = columns
+            .iter()
+            .fold(Select::from_table(table), |select_table, c| {
+                select_table.column(c.as_ref())
+            })
+            .limit(over_fetch_count);
+
+        let (order, maybe_cursor) = match (ascending, maybe_cursor) {
+            (true, Some(index)) => (
+                index_field.ascend(),
+                Some((
+                    index_field.less_than(index),
+                    index_field.greater_than(index),
+                )),
+            ),
+            (true, None) => (index_field.ascend(), None),
+            (false, Some(index)) => (
+                index_field.descend(),
+                Some((
+                    index_field.greater_than(index),
+                    index_field.less_than(index),
+                )),
+            ),
+            (false, None) => (index_field.descend(), None),
+        };
+
+        let query = maybe_cursor
+            .into_iter()
+            .fold(base_query, |bq, (inner, outer)| {
+                bq.value(
+                    Select::from_table(table)
+                        .value(count(asterisk()).alias("previous_count"))
+                        .so_that(match conditions.clone() {
+                            Some(c) => inner.and(c.into()),
+                            None => inner.into(),
+                        }),
+                )
+                .so_that(outer)
+            })
+            .order_by(order);
+        let final_query = conditions.into_iter().fold(query, |q, c| q.and_where(c));
+        let (sql_statement, parameters) = Postgres::build(final_query)?;
+
+        Ok(QueryMeta {
+            sql_statement,
+            parameters,
+            fetch_count: over_fetch_count,
+            ascending,
+            parse_previous,
+        })
+    }
+
+    /// Execute a raw connections query generated by `query_raw`
+    pub async fn query_raw<'a, T, E, F>(
+        pg_pool: PgPool,
+        map_row: F,
+        table: &'a str,
+        meta: QueryMeta<'a>,
+    ) -> Result<(Vec<E>, PageInfo)>
+    where
+        T: IntoEdge<E> + Send + Sync + Unpin,
+        E: EdgeCursor,
+        F: Fn(PgRow) -> T + Send + Sync + 'static,
+    {
+        let QueryMeta {
+            sql_statement,
+            parameters,
+            fetch_count,
+            ascending,
+            parse_previous,
+        } = meta;
+
+        let mut rows = parameters
+            .into_iter()
+            .fold(sqlx::query(&sql_statement), |q, key| {
+                sql::pg_bind_value(key, q)
+            })
+            .fetch_all(&pg_pool)
+            .await?;
+
+        let row_count = rows.len();
+        if row_count >= fetch_count {
+            let _ = rows.pop();
+        }
+
+        let mut buf = vec![];
+        let mut has_previous: Option<bool> = None;
+        let edges = rows
+            .into_iter()
+            .map(|row: PgRow| {
+                if parse_previous && has_previous.is_none() {
+                    // If we have a cursor, we created the "previous_count" as a subquery appended to
+                    // the end of the columns
+                    has_previous = Some(row.get::<i64, _>(row.len() - 1) > 0);
+                }
+                let item = map_row(row);
+                let cursor = encode_cursor(&mut buf, item.index(), table.as_bytes())?;
+                let edge = item.into_edge(cursor);
+                buf.clear();
+                Ok(edge)
+            })
+            .collect::<Result<Vec<E>>>()?;
+
+        let (edges, has_previous_page, has_next_page) = if ascending {
+            (
+                edges,
+                has_previous.unwrap_or(false),
+                row_count == fetch_count,
+            )
+        } else {
+            (
+                edges.into_iter().rev().collect(),
+                row_count == fetch_count,
+                has_previous.unwrap_or(false),
+            )
+        };
+
+        let start_cursor = edges.first().map(|e| e.cursor().to_owned());
+        let end_cursor = edges.last().map(|e| e.cursor().to_owned());
+        Ok((
+            edges,
+            PageInfo {
+                start_cursor,
+                end_cursor,
+                has_previous_page,
+                has_next_page,
+            },
+        ))
+    }
+}
+
 pub mod spec {
     use std::io::Cursor;
 
@@ -19,6 +255,9 @@ pub mod spec {
     pub enum CursorError {
         #[error("Cursor has invalid length")]
         InvalidLength,
+
+        #[error("Decoded cursor identity mismatch")]
+        IdentityMismatch,
 
         #[error("Io error: {0}")]
         Io(#[from] std::io::Error),
@@ -41,7 +280,7 @@ pub mod spec {
     }
 
     /// Decode an 'opaque' cursor consisting of an `i64` prefix and arbitrary bytes
-    pub fn decode_cursor(encoded: Vec<u8>) -> Result<(i64, Vec<u8>), CursorError> {
+    pub fn decode_cursor(encoded: Vec<u8>, ident: &[u8]) -> Result<i64, CursorError> {
         if encoded.len() <= 8 {
             return Err(CursorError::InvalidLength);
         }
@@ -50,7 +289,11 @@ pub mod spec {
         // i64 prefix is 8 bytes
         let rhs = decoded.split_off(8);
         let mut rdr = Cursor::new(decoded);
-        Ok((rdr.read_i64::<BigEndian>()?, rhs))
+        if ident != rhs {
+            Err(CursorError::IdentityMismatch)
+        } else {
+            rdr.read_i64::<BigEndian>().map_err(Into::into)
+        }
     }
 
     /// Graphql Relay Connections PageInfo
@@ -71,7 +314,7 @@ pub mod spec {
 
         fn index_field() -> &'static str;
 
-        fn cursor_key() -> &'static str;
+        fn table() -> &'static str;
 
         fn into_edge(self, cursor: String) -> T;
     }
@@ -112,7 +355,11 @@ pub mod spec {
 
     #[cfg(test)]
     mod test {
-        pub struct User;
+        use super::*;
+
+        pub struct User {
+            user_number: i64,
+        }
 
         #[juniper::graphql_object(Context = Context)]
         impl User {
@@ -124,7 +371,7 @@ pub mod spec {
         pub struct Context;
         impl juniper::Context for Context {}
 
-        impl_relay_connection!(UsersConnection, UserEdge, i32, ());
+        impl_relay_connection!(UsersConnection, UserEdge, User, Context);
 
         //#TODO add some tests here
         #[test]
