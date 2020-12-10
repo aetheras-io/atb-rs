@@ -112,12 +112,16 @@ pub mod connections {
             .transpose()?;
 
         let parse_previous = maybe_cursor.is_some();
-        let base_query = columns
-            .iter()
-            .fold(Select::from_table(table), |select_table, c| {
-                select_table.column(c.as_ref())
-            })
-            .limit(over_fetch_count);
+        let base_query = if !columns.is_empty() {
+            columns
+                .iter()
+                .fold(Select::from_table(table), |select_table, c| {
+                    select_table.column(c.as_ref())
+                })
+        } else {
+            Select::from_table(table).value(Table::from(table).asterisk())
+        }
+        .limit(over_fetch_count);
 
         let (order, maybe_cursor) = match (ascending, maybe_cursor) {
             (true, Some(index)) => (
