@@ -5,6 +5,7 @@ use quaint::Value;
 use sqlx::database::HasArguments;
 use sqlx::query::Query;
 
+/// Helper type for pg_bind_value function
 type PgArgs<'a> = <sqlx::Postgres as HasArguments<'a>>::Arguments;
 
 /// This is a quaint value to sqlx bind helper. Arrays and Chars are not supported.
