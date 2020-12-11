@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -26,9 +26,9 @@ actix-cors = { version = "0.5", optional = true }
 actix-threadpool = { version = "0.3", optional = true }
 
 # Graphql
-juniper = { git = "https://github.com/graphql-rust/juniper", rev = "f3170c7adf4405cc119d2129f78a591fe2fcd32b", optional = true }
-juniper_actix = { git = "https://github.com/graphql-rust/juniper", rev = "f3170c7adf4405cc119d2129f78a591fe2fcd32b", optional = true }
-dataloader = { version = "0.13", optional = true }
+juniper = { version = "0.15.0", optional = true }
+juniper_actix = { version = "0.2.0", optional = true }
+dataloader = { version = "0.13.2", optional = true }
 
 # Eventsourcing
 lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", rev = "a45272ef732ca5c82b13a6a43569ce5603bd641e", optional = true }
