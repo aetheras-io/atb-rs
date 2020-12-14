@@ -178,7 +178,7 @@ fn b64_decode_json<T: DeserializeOwned>(input: &str) -> Option<T> {
 pub fn validate_rsa256(claims: &Claims) -> bool {
     const LEEWAY: i64 = 0;
     let now = Utc::now().timestamp();
-    claims.exp < now - LEEWAY
+    claims.exp > now - LEEWAY
 }
 
 pub trait JwtMeta {
