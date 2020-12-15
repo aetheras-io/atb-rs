@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.1.9"
+version = "0.1.10"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -84,6 +84,8 @@ sql = [
   "sqlx/uuid",
   "sqlx/chrono",
   "sqlx/json",
+  "sqlx/decimal",
+  "sqlx/bit-vec",
   "quaint/postgresql",
   "quaint/serde-support",
   "quaint/json",
