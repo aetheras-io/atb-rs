@@ -25,6 +25,7 @@ pub fn pg_bind_value<'a>(
         Value::Json(v) => query.bind(v),
         Value::Uuid(v) => query.bind(v),
         Value::DateTime(v) => query.bind(v),
+        Value::Numeric(v) => query.bind(v),
         // Value::Char(v) => query.bind(v),
         // Value::Array(v) => query.bind(v.map(|arr| {
         //     arr.into_iter()
