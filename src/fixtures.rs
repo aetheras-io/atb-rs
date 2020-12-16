@@ -20,8 +20,8 @@ lazy_static! {
     pub static ref EVE: Uuid = Uuid::from_str("00000000-0000-0000-0000-000000000005").expect("uuid string is valid. qed");
 
     // test admins
-    pub static ref ADMIN_A: Uuid = Uuid::from_str("000ADMIN-0000-0000-0000-000000000001").expect("uuid string is valid. qed");
-    pub static ref ADMIN_B: Uuid = Uuid::from_str("000ADMIN-0000-0000-0000-000000000002").expect("uuid string is valid. qed");
+    pub static ref ADMIN_A: Uuid = Uuid::from_str("000000AD-0000-0000-0000-000000000001").expect("uuid string is valid. qed");
+    pub static ref ADMIN_B: Uuid = Uuid::from_str("000000AD-0000-0000-0000-000000000002").expect("uuid string is valid. qed");
 }
 
 #[cfg(feature = "jwt")]

@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.1.11"
+version = "0.2.0"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
