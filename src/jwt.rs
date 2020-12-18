@@ -214,7 +214,7 @@ mod actix_utils {
 
     pub struct ClaimsFromCookies<T: JwtMeta> {
         inner: Claims,
-        marker: PhantomData<T>,
+        _marker: PhantomData<T>,
     }
 
     impl<T: JwtMeta> ClaimsFromCookies<T> {
@@ -248,7 +248,7 @@ mod actix_utils {
             .map_or_else(future::err, |claims| {
                 future::ok(ClaimsFromCookies {
                     inner: claims,
-                    marker: PhantomData,
+                    _marker: PhantomData,
                 })
             })
         }
