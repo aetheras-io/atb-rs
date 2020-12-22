@@ -205,12 +205,73 @@ mod actix_utils {
 
     use std::marker::PhantomData;
     use std::ops::Deref;
+    use time::OffsetDateTime;
 
     use actix_web::cookie::Cookie;
     use actix_web::dev::Payload;
     use actix_web::error::ErrorUnauthorized;
+    use actix_web::http::header::AUTHORIZATION;
     use actix_web::{Error as ActixError, FromRequest, HttpMessage, HttpRequest};
     use futures::future;
+
+    pub struct ClaimsFromHeader<T: JwtMeta> {
+        inner: Claims,
+        _marker: PhantomData<T>,
+    }
+
+    impl<T: JwtMeta> ClaimsFromHeader<T> {
+        pub fn into_inner(self) -> Claims {
+            self.inner
+        }
+    }
+
+    impl<T: JwtMeta> Deref for ClaimsFromHeader<T> {
+        type Target = Claims;
+
+        fn deref(&self) -> &Self::Target {
+            &self.inner
+        }
+    }
+
+    impl<T: JwtMeta> FromRequest for ClaimsFromHeader<T> {
+        type Error = ActixError;
+        type Future = future::Ready<Result<Self, ActixError>>;
+        type Config = ();
+
+        fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+            req.headers()
+                .get(AUTHORIZATION)
+                .ok_or(ErrorUnauthorized("missing authorization header"))
+                .and_then(|header| {
+                    if header.len() < 8 {
+                        return Err(ErrorUnauthorized("invalid authorization header"));
+                    }
+                    header
+                        .to_str()
+                        .map_err(|_| ErrorUnauthorized("invalid authorization header"))
+                        .and_then(|parts| {
+                            let mut parts = parts.splitn(2, ' ');
+                            match parts.next() {
+                                Some(scheme) if scheme == "Bearer" => (),
+                                _ => return Err(ErrorUnauthorized("invalid authorization scheme")),
+                            }
+                            parts
+                                .next()
+                                .ok_or(ErrorUnauthorized("missing authorization payload"))
+                                .and_then(|jwt| {
+                                    Claims::decode::<T>(&jwt)
+                                        .ok_or(ErrorUnauthorized("authorization failed"))
+                                })
+                        })
+                })
+                .map_or_else(future::err, |claims| {
+                    future::ok(ClaimsFromHeader {
+                        inner: claims,
+                        _marker: PhantomData,
+                    })
+                })
+        }
+    }
 
     pub struct ClaimsFromCookies<T: JwtMeta> {
         inner: Claims,
@@ -241,9 +302,9 @@ mod actix_utils {
             match (req.cookie(claim_part_key), req.cookie(sig_part_key)) {
                 (Some(token), Some(sig)) => {
                     let jwt = format!("{}.{}", token.value(), sig.value());
-                    Claims::decode::<T>(&jwt).ok_or(ErrorUnauthorized(""))
+                    Claims::decode::<T>(&jwt).ok_or(ErrorUnauthorized("authorization failed"))
                 }
-                _ => Err(ErrorUnauthorized("")),
+                _ => Err(ErrorUnauthorized("jwt parts incomplete")),
             }
             .map_or_else(future::err, |claims| {
                 future::ok(ClaimsFromCookies {
@@ -256,6 +317,7 @@ mod actix_utils {
 
     pub fn to_cookie_parts<'a, T: JwtMeta>(
         jwt: String,
+        expiry: i64,
         fqdn: &'a str,
         debug: bool,
     ) -> Option<(Cookie, Cookie)> {
@@ -272,12 +334,14 @@ mod actix_utils {
             .path("/")
             .secure(false)
             .http_only(false)
+            .expires(OffsetDateTime::from_unix_timestamp(expiry))
             .finish();
         let sig_part = Cookie::build(sig_part_key, sig_part)
             .domain(fqdn)
             .path("/")
             .secure(!debug)
             .http_only(!debug)
+            .expires(OffsetDateTime::from_unix_timestamp(expiry))
             .finish();
 
         Some((claim_part, sig_part))
