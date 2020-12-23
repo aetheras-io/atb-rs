@@ -13,6 +13,9 @@ lazy_static! {
     pub static ref HEADER_HS256: Header = Header::new(Algorithm::HS256);
 }
 
+pub type Signer<'a> = (&'a Header, &'a EncodingKey);
+pub type Decoder<'a> = (&'a Header, &'a DecodingKey<'a>);
+
 /// Takes the result of a rsplit and ensure we only get 2 parts
 /// this is taken from the jsonwebtoken crate for quick implementation.  
 /// I think this is a totally unecessary "lispy" way of splitting
@@ -103,7 +106,7 @@ pub struct Claims {
     custom: Option<serde_json::Value>,
 }
 
-/// This is only used for serialize
+/// This is only used for serde ```skip_serialize_if```
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero(num: &i64) -> bool {
     *num == 0
@@ -145,16 +148,15 @@ impl Claims {
         self.custom.as_ref()
     }
 
-    pub fn encode(&self, header: &Header, encoding_key: &EncodingKey) -> Result<String, JwtError> {
-        jwt::encode(header, self, encoding_key)
+    pub fn encode(&self, signer: Signer) -> Result<String, JwtError> {
+        jwt::encode(signer.0, self, signer.1)
     }
 
     // #TODO might be beneficial to get the error reason for debugging.
     // right now we will keep the same optional interface to get things going quickly
     pub fn decode<V: Fn(&Claims) -> bool>(
         token: &str,
-        expect_header: &Header,
-        decoding_key: &DecodingKey,
+        decoder: Decoder,
         validator: V,
     ) -> Option<Claims> {
         let (signature, message) = expect_two!(token.rsplitn(2, '.'));
@@ -162,9 +164,9 @@ impl Claims {
         let header: Header = b64_decode_json(&header)?;
         let claims: Claims = b64_decode_json(&claims)?;
 
-        if expect_header.alg != header.alg
+        if decoder.0.alg != header.alg
             || !validator(&claims)
-            || !crypto::verify(signature, message, decoding_key, header.alg).ok()?
+            || !crypto::verify(signature, message, decoder.1, header.alg).ok()?
         {
             None
         } else {
@@ -186,104 +188,76 @@ pub fn simple_validate(claims: &Claims) -> bool {
     claims.exp > now - LEEWAY
 }
 
-pub trait JwtMeta {
-    fn cookie_parts() -> (&'static str, &'static str) {
-        ("access_token", "access_token_sig")
-    }
-
-    fn validate(claims: &Claims) -> bool {
-        simple_validate(claims)
-    }
-
-    fn header() -> &'static Header {
-        &HEADER_RS256
-    }
-
-    fn encoding_key() -> &'static EncodingKey;
-
-    fn decoding_key() -> &'static DecodingKey<'static>;
-}
-
 #[cfg(feature = "http")]
-mod actix_utils {
+pub mod actix_utils {
     use super::*;
 
-    use std::marker::PhantomData;
-    use std::ops::Deref;
-    use time::OffsetDateTime;
+    use std::{
+        rc::Rc,
+        result,
+        task::{Context, Poll},
+    };
 
     use actix_web::cookie::Cookie;
-    use actix_web::dev::Payload;
+    use actix_web::dev::{Payload, Service, ServiceRequest, ServiceResponse, Transform};
     use actix_web::error::ErrorUnauthorized;
     use actix_web::http::header::AUTHORIZATION;
     use actix_web::{Error as ActixError, FromRequest, HttpMessage, HttpRequest};
     use futures::future::{self, Either, Ready};
+    use time::OffsetDateTime;
 
-    use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
-    use std::{
-        rc::Rc,
-        task::{Context, Poll},
-    };
+    #[derive(thiserror::Error, Debug)]
+    pub enum Error {
+        #[error("missing authorization header")]
+        MissingAuthHeader,
 
-    pub struct JwtAuth<'a, EF, VF>
-    where
-        EF: Fn(&ServiceRequest) -> Result<String, ActixError>,
-        VF: Fn(&Claims) -> bool,
-    {
+        #[error("invalid authorization header length")]
+        InvalidHeaderLength,
+
+        #[error("invalid authorization header encoding")]
+        InvalidHeaderEncoding,
+
+        #[error("invalid authorization scheme")]
+        InvalidAuthScheme,
+
+        #[error("missing authorization payload")]
+        MissingAuthPayload,
+
+        #[error("claims failed verification or decoding")]
+        Failed,
+
+        #[error("{0}")]
+        Message(&'static str),
+    }
+
+    pub type Result<T, E = Error> = result::Result<T, E>;
+
+    /// Transform/Builder for each actix engine
+    pub struct JwtAuth<'a, EF, VF> {
         inner: Rc<JwtAuthInner<'a, EF, VF>>,
     }
 
-    impl<'a, EF, VF> JwtAuth<'a, EF, VF>
-    where
-        EF: Fn(&ServiceRequest) -> Result<String, ActixError>,
-        VF: Fn(&Claims) -> bool,
-    {
-        pub fn new(
-            header: &'a Header,
-            decoding_key: &'a DecodingKey<'a>,
-        ) -> JwtAuth<
-            'a,
-            impl Fn(&ServiceRequest) -> Result<String, ActixError>,
-            impl Fn(&Claims) -> bool,
-        > {
+    impl<'a, EF, VF> JwtAuth<'a, EF, VF> {
+        pub fn new(extractor: EF, validator: VF, decoder: Decoder<'a>) -> Self {
             let inner = Rc::new(JwtAuthInner {
-                extractor: jwt_from_bearer,
-                validator: simple_validate,
-                header,
-                decoding_key,
+                extractor,
+                validator,
+                decoder,
             });
             JwtAuth { inner }
         }
-
-        pub fn extractor(mut self, extractor: EF) -> Self {
-            if let Some(jwt_auth) = Rc::get_mut(&mut self.inner) {
-                jwt_auth.extractor = extractor;
-            }
-            self
-        }
-
-        pub fn validator(mut self, validator: VF) -> Self {
-            if let Some(jwt_auth) = Rc::get_mut(&mut self.inner) {
-                jwt_auth.validator = validator;
-            }
-            self
-        }
     }
 
-    pub struct JwtAuthInner<'a, EF, VF>
-    where
-        EF: Fn(&ServiceRequest) -> Result<String, ActixError>,
-        VF: Fn(&Claims) -> bool,
-    {
+    /// Cloned settings for each thread's copy of the middleware
+    pub struct JwtAuthInner<'a, EF, VF> {
         extractor: EF,
         validator: VF,
-        header: &'a Header,
-        decoding_key: &'a DecodingKey<'a>,
+        decoder: Decoder<'a>,
     }
 
     impl<'a, EF, VF, S, B> Transform<S> for JwtAuth<'a, EF, VF>
     where
-        EF: Fn(&ServiceRequest) -> Result<String, ActixError>,
+        EF: Fn(&ServiceRequest) -> Result<String>,
         VF: Fn(&Claims) -> bool,
         S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = ActixError>,
         S::Future: 'static,
@@ -297,13 +271,6 @@ mod actix_utils {
         type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
         fn new_transform(&self, service: S) -> Self::Future {
-            // cors library does a lazy eval of the error here
-            // by storing the error in the cors settings object during the builder phase
-            //
-            // cors also uses an Rc to store the inner configuration and uses that repeatedly
-            // when creating the middleware handler
-
-            println!("JWT AUTH TRANSFORM INIT");
             future::ok(JwtAuthMiddleware {
                 service,
                 inner: self.inner.clone(),
@@ -311,10 +278,10 @@ mod actix_utils {
         }
     }
 
-    /// middleware
+    /// Middleware Implementation
     pub struct JwtAuthMiddleware<'a, EF, VF, S>
     where
-        EF: Fn(&ServiceRequest) -> Result<String, ActixError>,
+        EF: Fn(&ServiceRequest) -> Result<String>,
         VF: Fn(&Claims) -> bool,
     {
         service: S,
@@ -323,7 +290,7 @@ mod actix_utils {
 
     impl<'a, EF, VF, S, B> Service for JwtAuthMiddleware<'a, EF, VF, S>
     where
-        EF: Fn(&ServiceRequest) -> Result<String, ActixError>,
+        EF: Fn(&ServiceRequest) -> Result<String>,
         VF: Fn(&Claims) -> bool,
         S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = ActixError>,
         S::Future: 'static,
@@ -339,15 +306,17 @@ mod actix_utils {
         }
 
         fn call(&mut self, req: ServiceRequest) -> Self::Future {
-            println!("MIDDLEWARE CALL");
             let suit = &self.inner;
             (suit.extractor)(&req)
                 .and_then(|jwt| {
-                    Claims::decode(&jwt, suit.header, suit.decoding_key, &suit.validator)
-                        .ok_or(ErrorUnauthorized("claims validation failed"))
+                    log::debug!("extracted jwt: {}", jwt);
+                    Claims::decode(&jwt, suit.decoder, &suit.validator).ok_or(Error::Failed)
                 })
                 .map_or_else(
-                    |e| Either::Left(future::err(e)),
+                    |e| {
+                        log::debug!("jwt auth middleware error: {}", e);
+                        Either::Left(future::err(ErrorUnauthorized("")))
+                    },
                     |claims| {
                         req.extensions_mut().insert(claims);
                         Either::Right(self.service.call(req))
@@ -363,7 +332,6 @@ mod actix_utils {
 
         #[inline]
         fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-            println!("FROM REQUEST CLAIMS");
             match req.extensions_mut().remove::<Claims>() {
                 Some(c) => future::ok(c),
                 _ => future::err(ErrorUnauthorized("claims missing from extensions")),
@@ -371,156 +339,47 @@ mod actix_utils {
         }
     }
 
-    fn jwt_from_bearer(req: &ServiceRequest) -> Result<String, ActixError> {
+    pub fn from_bearer(req: &ServiceRequest) -> Result<String> {
         req.headers()
             .get(AUTHORIZATION)
-            .ok_or(ErrorUnauthorized("missing authorization header"))
+            .ok_or(Error::MissingAuthHeader)
             .and_then(|header| {
                 if header.len() < 8 {
-                    return Err(ErrorUnauthorized("invalid authorization header"));
+                    return Err(Error::InvalidHeaderLength);
                 }
                 header
                     .to_str()
-                    .map_err(|_| ErrorUnauthorized("invalid authorization header"))
+                    .map_err(|_| Error::InvalidHeaderEncoding)
                     .and_then(|parts| {
                         let mut parts = parts.splitn(2, ' ');
                         match parts.next() {
                             Some(scheme) if scheme == "Bearer" => (),
-                            _ => return Err(ErrorUnauthorized("invalid authorization scheme")),
+                            _ => return Err(Error::InvalidAuthScheme),
                         }
                         parts
                             .next()
-                            .ok_or(ErrorUnauthorized("missing authorization payload"))
+                            .ok_or(Error::MissingAuthPayload)
                             .map(|jwt| jwt.to_owned())
                     })
             })
     }
 
-    // maybe use a trait for this??
-    // fn from_split_cookies(req: &ServiceRequest) -> Result<String, ActixError> {
-    //     let (claim_part_key, sig_part_key) = T::cookie_parts();
-    //     match (req.cookie(claim_part_key), req.cookie(sig_part_key)) {
-    //         (Some(token), Some(sig)) => {
-    //             let jwt = format!("{}.{}", token.value(), sig.value());
-    //             Claims::decode::<T>(&jwt).ok_or(ErrorUnauthorized("authorization failed"))
-    //         }
-    //         _ => Err(ErrorUnauthorized("jwt parts incomplete")),
-    //     }
-    //     .map_or_else(future::err, |claims| {
-    //         future::ok(ClaimsFromCookies {
-    //             inner: claims,
-    //             _marker: PhantomData,
-    //         })
-    //     })
-    // }
+    pub fn from_cookie_parts(
+        parts: (&'static str, &'static str),
+    ) -> impl Fn(&ServiceRequest) -> Result<String> {
+        move |req: &ServiceRequest| match (req.cookie(parts.0), req.cookie(parts.1)) {
+            (Some(token), Some(sig)) => Ok([token.value(), ".", sig.value()].concat()),
+            _ => Err(Error::Message("unable to create jwt from split cookies")),
+        }
+    }
 
-    // pub struct ClaimsFromHeader<T: JwtMeta> {
-    //     inner: Claims,
-    //     _marker: PhantomData<T>,
-    // }
-
-    // impl<T: JwtMeta> ClaimsFromHeader<T> {
-    //     pub fn into_inner(self) -> Claims {
-    //         self.inner
-    //     }
-    // }
-
-    // impl<T: JwtMeta> Deref for ClaimsFromHeader<T> {
-    //     type Target = Claims;
-
-    //     fn deref(&self) -> &Self::Target {
-    //         &self.inner
-    //     }
-    // }
-
-    // impl<T: JwtMeta> FromRequest for ClaimsFromHeader<T> {
-    //     type Error = ActixError;
-    //     type Future = future::Ready<Result<Self, ActixError>>;
-    //     type Config = ();
-
-    //     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-    //         req.headers()
-    //             .get(AUTHORIZATION)
-    //             .ok_or(ErrorUnauthorized("missing authorization header"))
-    //             .and_then(|header| {
-    //                 if header.len() < 8 {
-    //                     return Err(ErrorUnauthorized("invalid authorization header"));
-    //                 }
-    //                 header
-    //                     .to_str()
-    //                     .map_err(|_| ErrorUnauthorized("invalid authorization header"))
-    //                     .and_then(|parts| {
-    //                         let mut parts = parts.splitn(2, ' ');
-    //                         match parts.next() {
-    //                             Some(scheme) if scheme == "Bearer" => (),
-    //                             _ => return Err(ErrorUnauthorized("invalid authorization scheme")),
-    //                         }
-    //                         parts
-    //                             .next()
-    //                             .ok_or(ErrorUnauthorized("missing authorization payload"))
-    //                             .and_then(|jwt| {
-    //                                 Claims::decode::<T>(&jwt)
-    //                                     .ok_or(ErrorUnauthorized("authorization failed"))
-    //                             })
-    //                     })
-    //             })
-    //             .map_or_else(future::err, |claims| {
-    //                 future::ok(ClaimsFromHeader {
-    //                     inner: claims,
-    //                     _marker: PhantomData,
-    //                 })
-    //             })
-    //     }
-    // }
-
-    // pub struct ClaimsFromCookies<T: JwtMeta> {
-    //     inner: Claims,
-    //     _marker: PhantomData<T>,
-    // }
-
-    // impl<T: JwtMeta> ClaimsFromCookies<T> {
-    //     pub fn into_inner(self) -> Claims {
-    //         self.inner
-    //     }
-    // }
-
-    // impl<T: JwtMeta> Deref for ClaimsFromCookies<T> {
-    //     type Target = Claims;
-
-    //     fn deref(&self) -> &Self::Target {
-    //         &self.inner
-    //     }
-    // }
-
-    // impl<T: JwtMeta> FromRequest for ClaimsFromCookies<T> {
-    //     type Error = ActixError;
-    //     type Future = future::Ready<Result<Self, ActixError>>;
-    //     type Config = ();
-
-    //     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-    //         let (claim_part_key, sig_part_key) = T::cookie_parts();
-    //         match (req.cookie(claim_part_key), req.cookie(sig_part_key)) {
-    //             (Some(token), Some(sig)) => {
-    //                 let jwt = format!("{}.{}", token.value(), sig.value());
-    //                 Claims::decode::<T>(&jwt).ok_or(ErrorUnauthorized("authorization failed"))
-    //             }
-    //             _ => Err(ErrorUnauthorized("jwt parts incomplete")),
-    //         }
-    //         .map_or_else(future::err, |claims| {
-    //             future::ok(ClaimsFromCookies {
-    //                 inner: claims,
-    //                 _marker: PhantomData,
-    //             })
-    //         })
-    //     }
-    // }
-
-    pub fn to_cookie_parts<'a, T: JwtMeta>(
+    pub fn to_cookie_parts<'a>(
+        cookie_parts: (&'static str, &'static str),
         jwt: String,
         expiry: i64,
         fqdn: &'a str,
         debug: bool,
-    ) -> Option<(Cookie, Cookie)> {
+    ) -> Option<(Cookie<'a>, Cookie<'a>)> {
         let (token_part, sig_part) = jwt.rfind('.').map(|dot_position| {
             (
                 jwt[..dot_position].to_owned(),
@@ -528,7 +387,7 @@ mod actix_utils {
             )
         })?;
 
-        let (claim_part_key, sig_part_key) = T::cookie_parts();
+        let (claim_part_key, sig_part_key) = cookie_parts;
         let claim_part = Cookie::build(claim_part_key, token_part)
             .domain(fqdn)
             .path("/")
