@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.4.3"
+version = "0.4.4"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -28,8 +28,8 @@ actix-threadpool = { version = "0.3", optional = true }
 time = { version = "0.2", optional = true }
 
 # Graphql
-juniper = { version = "0.15.0", optional = true }
-juniper_actix = { version = "0.2.0", optional = true }
+juniper = { version = "0.15.1", optional = true }
+juniper_actix = { version = "0.2.1", optional = true }
 dataloader = { version = "0.13.2", optional = true }
 
 # Eventsourcing
@@ -38,7 +38,7 @@ lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = 
 lucidstream-inmemory = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.5.2", optional = true }
 
 # Sql
-sqlx = { version = "0.4", default-features = false, optional = true }
+sqlx = { version = "0.4.2", default-features = false, optional = true }
 quaint = { git = "https://github.com/prisma/quaint", rev = "6efc6f6fb48262b7d9e7e8c4b4a0f52402e1e432", optional = true } 
 
 # Fixtures

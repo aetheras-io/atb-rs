@@ -7,11 +7,16 @@ pub use uuid::Uuid;
 
 pub type DateTime = chrono::DateTime<Utc>;
 
+#[derive(Debug)]
 pub struct Take<T>(Option<T>);
 
 impl<T> Take<T> {
     pub fn new(item: T) -> Self {
         Self(Some(item))
+    }
+
+    pub fn take(&mut self) -> Option<T> {
+        std::mem::take(&mut self.0)
     }
 }
 
@@ -39,24 +44,25 @@ impl<T> std::ops::DerefMut for Take<T> {
 mod test {
     use super::*;
 
+    #[derive(Debug)]
+    struct Container {
+        data: Take<String>,
+    }
+
+    impl Container {
+        fn take_and_overwrite(&mut self) {
+            let _ = self.data.take();
+            self.overwrite();
+        }
+
+        fn overwrite(&mut self) {
+            //this will panic, and is exactly what we are trying to prevent
+            *self.data = "something".to_owned();
+        }
+    }
+
     #[test]
-    fn take_can_be_mutated() {
-        struct Container {
-            data: Take<String>,
-        }
-
-        impl Container {
-            fn mut_me(&mut self) {
-                *self.data = self.create_the_data();
-            }
-
-            fn create_the_data(&mut self) -> String {
-                //this will panic, and is exactly what we are trying to prevent
-                *self.data = "something".to_owned();
-                "hello".to_owned()
-            }
-        }
-
+    fn it_can_be_mutated() {
         let mut field = Container {
             data: Take::new("hello".to_owned()),
         };
@@ -64,5 +70,15 @@ mod test {
         let f = &mut field;
         let inner = &f.data;
         *f.data = "world".to_owned() + inner;
+    }
+
+    #[test]
+    #[should_panic]
+    fn it_should_panic_on_double_take() {
+        let mut field = Container {
+            data: Take::new("hello".to_owned()),
+        };
+
+        field.take_and_overwrite();
     }
 }
