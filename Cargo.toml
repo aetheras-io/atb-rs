@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.4.4"
+version = "0.4.5"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -33,9 +33,9 @@ juniper_actix = { version = "0.2.1", optional = true }
 dataloader = { version = "0.13.2", optional = true }
 
 # Eventsourcing
-lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.5.2", optional = true }
-lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.5.2", optional = true }
-lucidstream-inmemory = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.5.2", optional = true }
+lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.5.3", optional = true }
+lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.5.3", optional = true }
+lucidstream-inmemory = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.5.3", optional = true }
 
 # Sql
 sqlx = { version = "0.4.2", default-features = false, optional = true }
