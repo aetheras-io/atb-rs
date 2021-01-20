@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.5.4"
+version = "0.6.0"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -20,26 +20,34 @@ byteorder = "1.3"
 # time = "0.2"
 
 # HTTP 
-actix = { version = "0.10", optional = true }
-actix-web = { version = "3.3", optional = true }
-actix-web-httpauth = { version = "0.5", optional = true }
-actix-cors = { version = "0.5", optional = true }
-actix-threadpool = { version = "0.3", optional = true }
+# actix = { version = "0.10", optional = true }
+# actix-web = { version = "3.3", optional = true }
+# actix-web-httpauth = { version = "0.5", optional = true }
+# actix-cors = { version = "0.5", optional = true }
+
+# actix-threadpool = { version = "0.3", optional = true }
+
+actix = { version = "0.11.0-beta.1", optional = true }
+actix-web = { version = "4.0.0-beta.1", optional = true }
+actix-web-httpauth = { git = "https://github.com/DominicWrege/actix-extras", rev = "9f9690348be8224139c3672bbf4d8feb34393545", optional = true }
+actix-cors = { git = "https://github.com/DominicWrege/actix-extras", rev = "9f9690348be8224139c3672bbf4d8feb34393545", optional = true }
 time = { version = "0.2", optional = true }
 
 # Graphql
 juniper = { version = "0.15.2", optional = true }
-juniper_actix = { version = "0.2.2", optional = true }
+# juniper_actix = { version = "0.2.2", optional = true }
 dataloader = { version = "0.14.0", optional = true }
 
 # Eventsourcing
-lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.6.6", optional = true }
-lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.6.6", optional = true }
-lucidstream-inmemory = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.6.6", optional = true }
+# lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.6.6", optional = true }
+# lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.6.6", optional = true }
+lucidstream = { path = "../../dt665m/lucidstream-rs/lucidstream", optional = true }
+lucidstream-ges = { path = "../../dt665m/lucidstream-rs/lucidstream-ges", optional = true }
 
 # Sql
-sqlx = { version = "0.4.2", default-features = false, optional = true }
-quaint = { git = "https://github.com/prisma/quaint", rev = "6efc6f6fb48262b7d9e7e8c4b4a0f52402e1e432", optional = true } 
+# sqlx = { version = "0.4.2", default-features = false, optional = true }
+sqlx = { git = "https://github.com/lumeohq/sqlx", rev = "bb3992c8bf127b7cf9037132b45cf6eb0f7dc0af", default-features = false, optional = true }
+quaint = { git = "https://github.com/prisma/quaint", rev = "2d8c9c7fcf40c3c708b2a17d3b785102609935a0", optional = true } 
 
 # Fixtures
 fake = { version = "2.2", optional = true }
@@ -66,12 +74,11 @@ http = [
   "actix-web",
   "actix-web-httpauth",
   "actix-cors",
-  "actix-threadpool",
   "time"
 ]
 graphql = [
   "juniper/uuid",
-  "juniper_actix",
+  # "juniper_actix",
   "dataloader",
 ]
 jwt = [
@@ -100,7 +107,6 @@ sql = [
 eventsourcing = [
   "lucidstream",
   "lucidstream-ges",
-  "lucidstream-inmemory"
 ]
 fixtures = [
   "fake/derive",

@@ -255,15 +255,14 @@ pub mod actix_utils {
         decoder: Decoder<'a>,
     }
 
-    impl<'a, EF, VF, S, B> Transform<S> for JwtAuth<'a, EF, VF>
+    impl<'a, EF, VF, S, B> Transform<S, ServiceRequest> for JwtAuth<'a, EF, VF>
     where
         EF: Fn(&ServiceRequest) -> Result<String>,
         VF: Fn(&Claims) -> bool,
-        S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = ActixError>,
+        S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = ActixError>,
         S::Future: 'static,
         B: 'static,
     {
-        type Request = ServiceRequest;
         type Response = ServiceResponse<B>;
         type Error = ActixError;
         type InitError = ();
@@ -288,15 +287,14 @@ pub mod actix_utils {
         inner: Rc<JwtAuthInner<'a, EF, VF>>,
     }
 
-    impl<'a, EF, VF, S, B> Service for JwtAuthMiddleware<'a, EF, VF, S>
+    impl<'a, EF, VF, S, B> Service<ServiceRequest> for JwtAuthMiddleware<'a, EF, VF, S>
     where
         EF: Fn(&ServiceRequest) -> Result<String>,
         VF: Fn(&Claims) -> bool,
-        S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = ActixError>,
+        S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = ActixError>,
         S::Future: 'static,
         B: 'static,
     {
-        type Request = ServiceRequest;
         type Response = ServiceResponse<B>;
         type Error = ActixError;
         type Future = Either<Ready<Result<ServiceResponse<B>, ActixError>>, S::Future>;

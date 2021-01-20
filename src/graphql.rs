@@ -7,7 +7,8 @@
 pub use dataloader;
 
 #[cfg(feature = "http")]
-pub use juniper_actix;
+pub use crate::juniper_actix;
+// pub use juniper_actix;
 
 #[cfg(feature = "sql")]
 pub mod connections {
