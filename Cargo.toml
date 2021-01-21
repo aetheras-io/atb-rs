@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.6.2"
+version = "0.6.3"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -46,7 +46,7 @@ lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = 
 
 # Sql
 # sqlx = { version = "0.4.2", default-features = false, optional = true }
-sqlx = { git = "https://github.com/lumeohq/sqlx", rev = "bb3992c8bf127b7cf9037132b45cf6eb0f7dc0af", default-features = false, optional = true }
+sqlx = { git = "https://github.com/launchbadge/sqlx", rev = "df393128f8b07e3b858e65446b2a508a73bf5135", default-features = false, optional = true }
 quaint = { git = "https://github.com/prisma/quaint", rev = "2d8c9c7fcf40c3c708b2a17d3b785102609935a0", optional = true } 
 
 # Fixtures
