@@ -1,12 +1,12 @@
-# Aetheras Tool Box, Rust (ATB) 
+# A Tool Box, Rust (ATB) 
 
-A collection of standardized tools used for rust based backend projects.  
+A collection of tools used for rust based backend projects.  
 
 # Usage
 
 ```Cargo.toml
 [dependencies]
-atb = { git = "https://github.com/aetheras-io/atb-rs", tag = "v0.1.0", features = ["http"] }
+atb = { version = "0.6.5", features = ["http"] }
 ```
 
 ```rs
@@ -15,6 +15,7 @@ use actix_web;
 use uuid;
 ...
 ```
+
 ## Available Features
 
 - Http (Actix)
