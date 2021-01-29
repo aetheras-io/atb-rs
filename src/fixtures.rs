@@ -1,7 +1,3 @@
-use std::env;
-use std::fs::{self, File};
-use std::io::Read;
-
 use lazy_static::lazy_static;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -29,26 +25,13 @@ mod jwt {
     use super::*;
     use jsonwebtoken::{DecodingKey, EncodingKey};
 
+    pub static PRIV_KEY_BYTES: &[u8] = include_bytes!("../fixtures/test_priv.pem");
+    pub static PUB_KEY_BYTES: &[u8] = include_bytes!("../fixtures/test_pub.pem");
+
     lazy_static! {
-        pub static ref PRIV_KEY_BYTES: Vec<u8> = {
-            let file = env::var("PRIV_KEY_PATH").unwrap_or("../fixtures/test_priv.pem".to_owned());
-            let mut f = File::open(&file).expect("no file found");
-            let metadata = fs::metadata(&file).expect("unable to read metadata");
-            let mut buffer = vec![0; metadata.len() as usize];
-            f.read(&mut buffer).expect("buffer overflow");
-            buffer
-        };
-        pub static ref PUB_KEY_BYTES: Vec<u8> = {
-            let file = env::var("PUB_KEY_PATH").unwrap_or("../fixtures/test_pub.pem".to_owned());
-            let mut f = File::open(&file).expect("no file found");
-            let metadata = fs::metadata(&file).expect("unable to read metadata");
-            let mut buffer = vec![0; metadata.len() as usize];
-            f.read(&mut buffer).expect("buffer overflow");
-            buffer
-        };
         pub static ref JWT_ENCODING_KEY: EncodingKey =
-            EncodingKey::from_rsa_pem(&PRIV_KEY_BYTES).expect("priv pem format is correct. qed");
+            EncodingKey::from_rsa_pem(PRIV_KEY_BYTES).expect("priv pem format is correct. qed");
         pub static ref JWT_DECODING_KEY: DecodingKey<'static> =
-            DecodingKey::from_rsa_pem(&PUB_KEY_BYTES).expect("pub pem format is correct. qed");
+            DecodingKey::from_rsa_pem(PUB_KEY_BYTES).expect("pub pem format is correct. qed");
     }
 }
