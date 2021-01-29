@@ -1,9 +1,3 @@
-//! Juniper Graphql Helpers.  #NOTE currently juniper is a little problematic to use as a reexport
-//! because of some macro use statement problems when importing juniper from another crate.  I
-//! don't think their macros were written/sanitized for this use case.  The big issue later down
-//! the road is keeping juniper versions in sync, since the relay spec is defined here.  This will
-//! be pretty difficult to debug but keep an eye out on it and if there is time, we can take a look
-//! at their proc macros to see how our use case can be supported.
 pub use dataloader;
 
 #[cfg(feature = "http")]

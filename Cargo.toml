@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.6.9"
+version = "0.7.0"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -34,8 +34,7 @@ actix-cors = { git = "https://github.com/DominicWrege/actix-extras", rev = "9f96
 time = { version = "0.2", optional = true }
 
 # Graphql
-juniper = { git = "https://github.com/dt665m/juniper", rev = "fa074f6ecad13cbbabd02f1895e223b70dcafd38", optional = true }
-# juniper = { version = "0.15.2", optional = true }
+juniper = { version = "0.15.3", optional = true }
 # juniper_actix = { version = "0.2.2", optional = true }
 dataloader = { version = "0.14.0", optional = true }
 

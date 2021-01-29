@@ -1,17 +1,3 @@
-// #HACK this brings juniper into crate level global scope because apparently
-// juniper's macros expect the base juniper crate to be at root instead of importing juniper from
-// itself?
-// Juniper users will need to do
-// ```
-// #[macro_use]
-// extern crate atb as juniper
-// ```
-// In the end, macro heavy crates may not be suitable for this kind of library aggregation.  We
-// currently do not use any macros for sqlx but if they also don't have sanitized use statements,
-// then we would be SOL
-#[cfg(feature = "graphql")]
-pub use juniper::*;
-
 pub mod logging;
 pub mod types;
 
