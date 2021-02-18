@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.8.0"
+version = "0.8.1"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -39,15 +39,15 @@ juniper = { version = "0.15.3", optional = true }
 dataloader = { version = "0.14.0", optional = true }
 
 # Eventsourcing
-lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.9.0", optional = true }
-lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.9.0", optional = true }
+lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.9.1", optional = true }
+lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.9.1", optional = true }
 # lucidstream = { path = "../../dt665m/lucidstream-rs/lucidstream", optional = true }
 # lucidstream-ges = { path = "../../dt665m/lucidstream-rs/lucidstream-ges", optional = true }
 
 # Sql
-# sqlx = { version = "0.4.2", default-features = false, optional = true }
-sqlx = { git = "https://github.com/launchbadge/sqlx", rev = "df393128f8b07e3b858e65446b2a508a73bf5135", default-features = false, optional = true }
-quaint = { git = "https://github.com/prisma/quaint", rev = "2d8c9c7fcf40c3c708b2a17d3b785102609935a0", optional = true } 
+sqlx = { version = "0.5.1", default-features = false, optional = true }
+# sqlx = { git = "https://github.com/launchbadge/sqlx", rev = "df393128f8b07e3b858e65446b2a508a73bf5135", default-features = false, optional = true }
+quaint = { git = "https://github.com/prisma/quaint", rev = "ac3d9f22875c899ef8d1c0aff7d2b0d206f0e314", optional = true } 
 
 # Fixtures
 fake = { version = "2.2", optional = true }
