@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.8.1"
+version = "0.8.2"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -39,8 +39,8 @@ juniper = { version = "0.15.3", optional = true }
 dataloader = { version = "0.14.0", optional = true }
 
 # Eventsourcing
-lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.9.1", optional = true }
-lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.9.1", optional = true }
+lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.9.2", optional = true }
+lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.9.2", optional = true }
 # lucidstream = { path = "../../dt665m/lucidstream-rs/lucidstream", optional = true }
 # lucidstream-ges = { path = "../../dt665m/lucidstream-rs/lucidstream-ges", optional = true }
 
