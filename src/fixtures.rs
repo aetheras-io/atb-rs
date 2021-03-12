@@ -21,7 +21,7 @@ lazy_static! {
 }
 
 #[cfg(feature = "jwt")]
-mod jwt {
+pub mod jwt {
     use super::*;
     use jsonwebtoken::{DecodingKey, EncodingKey};
 

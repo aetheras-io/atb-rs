@@ -1,5 +1,7 @@
 use crate::types::{DateTime, Duration, Utc, Uuid};
 
+use std::fmt::Display;
+
 use jsonwebtoken::{self as jwt, crypto, errors::Error as JwtError, Algorithm};
 use lazy_static::lazy_static;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -31,22 +33,18 @@ macro_rules! expect_two {
 
 pub struct Builder(Claims);
 impl Builder {
-    pub fn new(expiry_duration: Duration) -> Self {
+    pub fn new<S: AsRef<str>>(issuer: S, expiry_duration: Duration) -> Self {
         let iat = Utc::now();
         Builder(Claims {
+            iss: issuer.as_ref().to_owned(),
             iat: iat.timestamp(),
             exp: (iat + expiry_duration).timestamp(),
             ..Default::default()
         })
     }
 
-    pub fn issuer<S: Into<String>>(mut self, issuer: S) -> Self {
-        self.0.iss = issuer.into();
-        self
-    }
-
-    pub fn subject<U: Into<String>>(mut self, sub: U) -> Self {
-        self.0.sub = sub.into();
+    pub fn subject<T: Display>(mut self, sub: T) -> Self {
+        self.0.sub = sub.to_string();
         self
     }
 
@@ -61,30 +59,32 @@ impl Builder {
     }
 
     /// add custom serialization values on top of the default
-    pub fn custom(mut self, custom: serde_json::Value) -> Self {
-        self.0.custom = Some(custom);
-        self
-    }
-    pub fn build(self) -> Option<Claims> {
-        if let Some(ref custom) = self.0.custom {
-            if custom.get("iss").is_some()
-                || custom.get("sub").is_some()
-                || custom.get("iat").is_some()
-                || custom.get("exp").is_some()
-                || custom.get("nbf").is_some()
-                || custom.get("aud").is_some()
-            {
-                return None;
-            }
+    pub fn custom<T: Serialize>(mut self, data: T) -> Self {
+        let value = serde_json::to_value(data).expect("custom claims data should serialize. qed");
+        if value.get("iss").is_some()
+            || value.get("sub").is_some()
+            || value.get("iat").is_some()
+            || value.get("exp").is_some()
+            || value.get("nbf").is_some()
+            || value.get("aud").is_some()
+        {
+            log::warn!("custom value has keys that clash with default claim keys");
+            self
+        } else {
+            self.0.custom = Some(value);
+            self
         }
-        Some(self.0)
+    }
+
+    pub fn build(self) -> Claims {
+        self.0
     }
 }
 
 /// #TODO make a custom error type for JWTs and Claims
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct Claims {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default)]
     iss: String,
 
     #[serde(default)]
@@ -102,7 +102,7 @@ pub struct Claims {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     aud: Vec<String>,
 
-    #[serde(flatten)]
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
     custom: Option<serde_json::Value>,
 }
 
@@ -146,6 +146,20 @@ impl Claims {
 
     pub fn custom(&self) -> Option<&serde_json::Value> {
         self.custom.as_ref()
+    }
+
+    /// Take and deserialize the custom values
+    pub fn deserialize_custom<T: DeserializeOwned>(&mut self) -> Option<T> {
+        self.custom
+            .take()
+            .and_then(|v| serde_json::from_value(v).ok())
+    }
+
+    /// Clone and deserialize the custom values
+    pub fn deserialize_custom_cloned<T: DeserializeOwned>(&self) -> Option<T> {
+        self.custom
+            .clone()
+            .and_then(|v| serde_json::from_value(v).ok())
     }
 
     pub fn encode(&self, signer: Signer) -> Result<String, JwtError> {
@@ -410,20 +424,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_handles_duplicate_custom_fields() {
-        unimplemented!();
+    fn it_handles_clashing_custom_fields() {
+        #[derive(PartialEq, Debug, Serialize, Deserialize)]
+        struct Custom {
+            iss: String,
+        }
+        let custom = Custom {
+            iss: "notdenis".to_owned(),
+        };
+
+        let claims = Builder::new("denis", chrono::Duration::days(1))
+            .subject(Uuid::new_v4())
+            .custom(custom)
+            .build();
+        assert!(claims.custom().is_none());
     }
 
     #[test]
     fn it_handles_custom_fields() {
-        let custom = serde_json::json!({
-            "hello": "world"
-        });
-        let _claims = Builder::new(chrono::Duration::days(1))
-            .issuer("hello")
-            .subject(Uuid::new_v4().to_string())
-            .custom(custom)
+        #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
+        struct Custom {
+            hello: String,
+        }
+        let custom = Custom {
+            hello: "world".to_owned(),
+        };
+
+        let mut claims = Builder::new("denis", chrono::Duration::days(1))
+            .subject(Uuid::new_v4())
+            .custom(custom.clone())
             .build();
-        // #TODO check for errors
+
+        let custom_de: Custom = claims.deserialize_custom().unwrap();
+        assert_eq!(custom, custom_de);
     }
 }

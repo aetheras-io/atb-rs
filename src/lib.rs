@@ -179,20 +179,20 @@ pub mod juniper_actix {
             .get(CONTENT_TYPE)
             .and_then(|hv| hv.to_str().ok());
         let req = match content_type_header {
-        Some("application/json") => {
-            let body = String::from_request(&req, &mut payload.into_inner()).await?;
-            serde_json::from_str::<GraphQLBatchRequest<S>>(&body).map_err(ErrorBadRequest)
-        }
-        Some("application/graphql") => {
-            let body = String::from_request(&req, &mut payload.into_inner()).await?;
-            Ok(GraphQLBatchRequest::Single(GraphQLRequest::new(
-                body, None, None,
-            )))
-        }
-        _ => Err(ErrorUnsupportedMediaType(
-            "GraphQL requests should have content type `application/json` or `application/graphql`",
-        )),
-    }?;
+            Some("application/json") => {
+                let body = String::from_request(&req, &mut payload.into_inner()).await?;
+                serde_json::from_str::<GraphQLBatchRequest<S>>(&body).map_err(ErrorBadRequest)
+            }
+            Some("application/graphql") => {
+                let body = String::from_request(&req, &mut payload.into_inner()).await?;
+                Ok(GraphQLBatchRequest::Single(GraphQLRequest::new(
+                    body, None, None,
+                )))
+            }
+            _ => Err(ErrorUnsupportedMediaType(
+                "GraphQL requests should have content type `application/json` or `application/graphql`",
+            )),
+        }?;
         let gql_batch_response = req.execute(schema, context).await;
         let gql_response = serde_json::to_string(&gql_batch_response)?;
         let mut response = match gql_batch_response.is_ok() {
@@ -203,16 +203,6 @@ pub mod juniper_actix {
     }
 
     /// Create a handler that replies with an HTML page containing GraphiQL. This does not handle routing, so you can mount it on any endpoint
-    ///
-    /// For example:
-    ///
-    /// ```
-    /// # use juniper_actix::graphiql_handler;
-    /// # use actix_web::{web, App};
-    ///
-    /// let app = App::new()
-    ///          .route("/", web::get().to(|| graphiql_handler("/graphql", Some("/graphql/subscriptions"))));
-    /// ```
     #[allow(dead_code)]
     pub async fn graphiql_handler(
         graphql_endpoint_url: &str,
