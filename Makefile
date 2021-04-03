@@ -13,6 +13,7 @@ sanity-build:
 	cargo build --features "sql graphql" 
 	cargo build --features fixtures 
 	cargo build --features jwt 
+	cargo build --features serde_utils 
 	cargo build --all-features
 
 tag:

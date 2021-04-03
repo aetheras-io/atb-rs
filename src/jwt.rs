@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[cfg(feature = "http")]
-pub use actix_utils::*;
+pub use ::actix_utils::*;
 pub use jsonwebtoken::{DecodingKey, EncodingKey, Header};
 
 lazy_static! {

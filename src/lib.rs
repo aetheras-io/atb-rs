@@ -19,6 +19,8 @@ pub mod includes {
     pub use uuid;
 }
 
+pub mod utils;
+
 #[cfg(feature = "http")]
 pub mod http {
     pub use actix;
