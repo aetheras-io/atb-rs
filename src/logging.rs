@@ -15,7 +15,7 @@ pub fn init_logger(pattern: &str) {
         let level = match record.level() {
             Level::Error => Colour::Red.bold().paint("ERR"),
             Level::Warn => Colour::Yellow.bold().paint("WRN"),
-            Level::Info => Colour::Blue.bold().paint("INF"),
+            Level::Info => Colour::Green.bold().paint("INF"),
             Level::Debug => Colour::Green.bold().paint("DBG"),
             Level::Trace => Colour::Cyan.bold().paint("TRC"),
         };
