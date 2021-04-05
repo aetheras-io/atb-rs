@@ -2,7 +2,7 @@
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
-version = "0.9.6"
+version = "0.10.0"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2018"
 
@@ -24,18 +24,16 @@ byteorder = "1.3"
 # actix-web = { version = "3.3", optional = true }
 # actix-web-httpauth = { version = "0.5", optional = true }
 # actix-cors = { version = "0.5", optional = true }
-# actix-threadpool = { version = "0.3", optional = true }
 
 # #HACK for tokio1 since libraries are all over the place 
-actix = { version = "=0.11.0-beta.1", optional = true }
-actix-rt = { version = "=2.0.0-beta.2", optional = true }
-actix-service = { version = "=2.0.0-beta.3", optional = true }
-actix-web = { version = "=4.0.0-beta.1", optional = true }
-actix-http = { version = "=3.0.0-beta.1", optional = true }
-actix-utils = { version = "=3.0.0-beta.1", optional = true }
-actix-web-httpauth = { git = "https://github.com/DominicWrege/actix-extras", rev = "9f9690348be8224139c3672bbf4d8feb34393545", optional = true }
-actix-cors = { git = "https://github.com/DominicWrege/actix-extras", rev = "9f9690348be8224139c3672bbf4d8feb34393545", optional = true }
-time = { version = "0.2", optional = true }
+actix = { version = "0.11.1", optional = true }
+actix-rt = { version = "2.2", optional = true }
+actix-service = { version = "=2.0.0-beta.5", optional = true }
+actix-web = { version = "=4.0.0-beta.5", optional = true }
+actix-http = { version = "=3.0.0-beta.5", optional = true }
+actix-utils = { version = "=3.0.0-beta.4", optional = true }
+actix-cors = { version = "=0.6.0-beta.1", optional = true }
+actix-web-httpauth = { version = "=0.6.0-beta.1", optional = true }
 
 # Graphql
 juniper = { version = "0.15.3", optional = true }
@@ -57,6 +55,7 @@ quaint = { git = "https://github.com/prisma/quaint", rev = "ac3d9f22875c899ef8d1
 fake = { version = "2.2", optional = true }
 
 # JWT / Miscellaneous 
+time = { version = "0.2", optional = true }
 jsonwebtoken = {version = "7.2", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true } 

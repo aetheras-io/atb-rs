@@ -206,11 +206,7 @@ pub fn simple_validate(claims: &Claims) -> bool {
 pub mod actix_utils {
     use super::*;
 
-    use std::{
-        rc::Rc,
-        result,
-        task::{Context, Poll},
-    };
+    use std::rc::Rc;
 
     use actix_web::cookie::Cookie;
     use actix_web::dev::{Payload, Service, ServiceRequest, ServiceResponse, Transform};
@@ -244,7 +240,7 @@ pub mod actix_utils {
         Message(&'static str),
     }
 
-    pub type Result<T, E = Error> = result::Result<T, E>;
+    pub type Result<T, E = Error> = std::result::Result<T, E>;
 
     /// Transform/Builder for each actix engine
     pub struct JwtAuth<'a, EF, VF> {
@@ -313,11 +309,9 @@ pub mod actix_utils {
         type Error = ActixError;
         type Future = Either<Ready<Result<ServiceResponse<B>, ActixError>>, S::Future>;
 
-        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            self.service.poll_ready(cx)
-        }
+        actix_service::forward_ready!(service);
 
-        fn call(&mut self, req: ServiceRequest) -> Self::Future {
+        fn call(&self, req: ServiceRequest) -> Self::Future {
             let suit = &self.inner;
             (suit.extractor)(&req)
                 .and_then(|jwt| {
