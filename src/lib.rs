@@ -1,6 +1,8 @@
 pub mod logging;
 pub mod types;
 
+#[cfg(feature = "http")]
+pub mod actix_ext;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 #[cfg(feature = "jwt")]
@@ -23,8 +25,11 @@ pub mod utils;
 
 #[cfg(feature = "http")]
 pub mod http {
+    pub use crate::actix_ext;
+
     pub use actix;
     pub use actix_cors;
+    pub use actix_utils;
     pub use actix_web;
     pub use actix_web_httpauth;
 }

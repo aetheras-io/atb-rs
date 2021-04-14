@@ -28,17 +28,31 @@ pub mod serde {
         }
     }
 
-    pub fn de_empty_string_as_none<'de, D, T>(de: D) -> Result<Option<T>, D::Error>
+    pub fn de_empty_as_none<'de, D, T>(de: D) -> Result<Option<String>, D::Error>
     where
         D: Deserializer<'de>,
-        T: Deserialize<'de>,
     {
-        use serde::de::IntoDeserializer;
         let opt = Option::<String>::deserialize(de)?;
-        let opt = opt.as_deref();
         match opt {
-            None | Some("") => Ok(None),
-            Some(s) => T::deserialize(s.into_deserializer()).map(Some),
+            None => Ok(None),
+            Some(s) if &s == "" => Ok(None),
+            _ => Ok(opt),
         }
+    }
+
+    pub fn ser_bytes_as_base64<T, S>(bytes: &T, se: S) -> Result<S::Ok, S::Error>
+    where
+        T: AsRef<[u8]>,
+        S: serde::Serializer,
+    {
+        se.serialize_str(&base64::encode(bytes.as_ref()))
+    }
+
+    pub fn de_base64_as_bytes<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let b64_str = String::deserialize(de)?;
+        base64::decode(b64_str).map_err(serde::de::Error::custom)
     }
 }
