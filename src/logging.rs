@@ -25,9 +25,9 @@ pub fn init_logger(pattern: &str, deep: bool) {
                 level,
                 Colour::Blue.bold().paint(time_now),
                 record.args(),
-                record.module_path().unwrap(),
-                record.file().unwrap(),
-                record.line().unwrap(),
+                record.module_path().unwrap_or("UNKNOWN_MODULE"),
+                record.file().unwrap_or("UNKNOWN_FILE"),
+                record.line().unwrap_or(0),
             );
             writeln!(buf, "{}", output)
         });
