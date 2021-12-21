@@ -161,21 +161,19 @@ pub mod jwt {
 
         fn call(&self, req: ServiceRequest) -> Self::Future {
             let suit = &self.inner;
-            (suit.extractor)(&req)
-                .and_then(|jwt| {
-                    log::debug!("extracted jwt: {}", jwt);
-                    Claims::decode(&jwt, suit.decoder, &suit.validator).ok_or(Error::Failed)
-                })
-                .map_or_else(
-                    |e| {
-                        log::debug!("jwt auth middleware error: {}", e);
-                        Either::Left(future::err(ErrorUnauthorized("")))
-                    },
-                    |claims| {
-                        req.extensions_mut().insert(claims);
-                        Either::Right(self.service.call(req))
-                    },
-                )
+            match (suit.extractor)(&req).and_then(|jwt| {
+                log::debug!("extracted jwt: {}", jwt);
+                Claims::decode(&jwt, suit.decoder, &suit.validator).ok_or(Error::Failed)
+            }) {
+                Ok(claims) => {
+                    req.extensions_mut().insert(claims);
+                    Either::Right(self.service.call(req))
+                }
+                Err(e) => {
+                    log::debug!("jwt auth middleware error: {}", e);
+                    Either::Left(future::ok(req.error_response(ErrorUnauthorized(""))))
+                }
+            }
         }
     }
 
