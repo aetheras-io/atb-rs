@@ -1,0 +1,8 @@
+[package]
+name = "atb-cli"
+version = "0.13.0"
+authors = ["Denis Tsai <denistsai@aetheras.io>"]
+edition = "2021"
+
+[dependencies]
+clap = { version = "3", features = ["derive"] }

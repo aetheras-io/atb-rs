@@ -1,0 +1,49 @@
+[package]
+name = "atb-actix-ext"
+version = "0.13.0"
+authors = ["Denis Tsai <denistsai@aetheras.io>"]
+edition = "2021"
+
+[dependencies]
+atb-types = { path = "../types", optional = true }
+
+log = "0.4"
+futures = "0.3"
+thiserror = {version = "1", optional = true } 
+time = { version = "0.3", optional = true }
+
+# Graphql
+juniper = { version = "0.15.3", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true } 
+# #HACK for tokio1 since libraries are all over the place 
+# juniper_actix = { version = "0.5.0-dev", optional = true }
+
+actix-rt = "2.6"
+# Compress-zstd conflicts with some libs that use it (version wise).
+actix-web = { version = "4.0", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "cookies"] } 
+actix-cors = "0.6.1"
+actix-web-httpauth = "0.6.0"
+actix-service = "2"
+
+[features]
+default = []
+all = [
+  "jwt",
+  "graphql-juniper",
+  "zstd"
+]
+zstd = [
+  "actix-web/compress-zstd"
+]
+graphql-juniper= [
+  "juniper",
+  "serde",
+  "serde_json",
+  # "dataloader",
+]
+jwt = [
+  "atb-types/jwt",
+  "thiserror",
+  "time",
+]

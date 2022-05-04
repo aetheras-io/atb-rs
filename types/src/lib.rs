@@ -1,6 +1,18 @@
-//! Collection of commonly used types
 #[cfg(feature = "jwt")]
-pub use crate::jwt::Claims;
+pub mod jwt;
+
+#[cfg(feature = "fixtures")]
+pub mod fixtures;
+
+pub mod prelude {
+    pub use chrono;
+    pub use uuid;
+
+    pub use super::*;
+
+    #[cfg(feature = "jwt")]
+    pub use jwt::*;
+}
 
 pub use chrono::{Duration, Utc};
 pub use uuid::Uuid;
@@ -43,6 +55,7 @@ impl<T> std::ops::DerefMut for Take<T> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::ops::Deref;
 
     #[derive(Debug)]
     struct Container {
@@ -69,7 +82,9 @@ mod test {
 
         let f = &mut field;
         let inner = &f.data;
-        *f.data = "world".to_owned() + inner;
+        *f.data = [inner, " ", "world"].concat();
+
+        assert_eq!(f.data.deref(), &"hello world".to_owned());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::types::{DateTime, Duration, Utc, Uuid};
+use crate::{DateTime, Duration, Utc, Uuid};
 
 use std::fmt::Display;
 
@@ -14,7 +14,7 @@ lazy_static! {
 }
 
 pub type Signer<'a> = (&'a Header, &'a EncodingKey);
-pub type Decoder<'a> = (&'a Header, &'a DecodingKey<'a>);
+pub type Decoder<'a> = (&'a Header, &'a DecodingKey);
 
 /// Takes the result of a rsplit and ensure we only get 2 parts
 /// this is taken from the jsonwebtoken crate for quick implementation.  
@@ -41,7 +41,7 @@ impl Builder {
         })
     }
 
-    pub fn subject<T: Display>(mut self, sub: T) -> Self {
+    pub fn subject(mut self, sub: impl Display) -> Self {
         self.0.sub = sub.to_string();
         self
     }
@@ -66,7 +66,6 @@ impl Builder {
             || value.get("nbf").is_some()
             || value.get("aud").is_some()
         {
-            log::warn!("custom value has keys that clash with default claim keys");
             self
         } else {
             self.0.custom = Some(value);
@@ -146,18 +145,10 @@ impl Claims {
         self.custom.as_ref()
     }
 
-    /// Take and deserialize the custom values
-    pub fn deserialize_custom<T: DeserializeOwned>(&mut self) -> Option<T> {
+    pub fn deserialize_custom<T: DeserializeOwned>(&self) -> Option<T> {
         self.custom
-            .take()
-            .and_then(|v| serde_json::from_value(v).ok())
-    }
-
-    /// Clone and deserialize the custom values
-    pub fn deserialize_custom_cloned<T: DeserializeOwned>(&self) -> Option<T> {
-        self.custom
-            .clone()
-            .and_then(|v| serde_json::from_value(v).ok())
+            .as_ref()
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
 
     pub fn encode(&self, signer: Signer) -> Result<String, JwtError> {
@@ -166,23 +157,21 @@ impl Claims {
 
     // #TODO might be beneficial to get the error reason for debugging.
     // right now we will keep the same optional interface to get things going quickly
-    pub fn decode<V: Fn(&Claims) -> bool>(
+    pub fn decode(
         token: &str,
         decoder: Decoder,
-        validator: V,
+        validator: impl Fn(&Claims) -> bool,
     ) -> Option<Claims> {
         let (signature, message) = expect_two!(token.rsplitn(2, '.'));
         let (claims, header) = expect_two!(message.rsplitn(2, '.'));
         let header: Header = b64_decode_json(&header)?;
-        let claims: Claims = b64_decode_json(&claims)?;
 
         if decoder.0.alg != header.alg
-            || !validator(&claims)
-            || !crypto::verify(signature, message, decoder.1, header.alg).ok()?
+            || !crypto::verify(signature, message.as_bytes(), decoder.1, header.alg).ok()?
         {
             None
         } else {
-            Some(claims)
+            b64_decode_json(&claims).and_then(|c| if validator(&c) { Some(c) } else { None })
         }
     }
 }
@@ -214,7 +203,7 @@ mod tests {
             iss: "notdenis".to_owned(),
         };
 
-        let claims = Builder::new("denis", chrono::Duration::days(1))
+        let claims = Builder::new("denis", Duration::days(1))
             .subject(Uuid::new_v4())
             .custom(custom)
             .build();
@@ -231,8 +220,8 @@ mod tests {
             hello: "world".to_owned(),
         };
 
-        let mut claims = Builder::new("denis", chrono::Duration::days(1))
-            .subject(Uuid::new_v4())
+        let claims = Builder::new("denis", Duration::days(1))
+            .subject(Uuid::new_v4().to_string())
             .custom(custom.clone())
             .build();
 
