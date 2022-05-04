@@ -1,0 +1,8 @@
+[package]
+name = "atb-build"
+version = "0.13.0"
+authors = ["Denis Tsai <denistsai@aetheras.io>"]
+edition = "2021"
+
+[dependencies]
+platforms = "2.0"

@@ -1,13 +1,13 @@
+pub mod sql;
+
 pub use dataloader;
+pub use quaint;
+pub use sqlx;
 
-#[cfg(feature = "http")]
-pub use crate::juniper_actix;
-// pub use juniper_actix;
-
-#[cfg(feature = "sql")]
 pub mod connections {
     use super::spec::*;
-    use crate::sql;
+    use super::sql;
+
     use std::convert::Into;
 
     use quaint::prelude::*;

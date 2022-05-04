@@ -1,0 +1,9 @@
+[package]
+name = "atb-serde-ext"
+version = "0.13.0"
+authors = ["Denis Tsai <denistsai@aetheras.io>"]
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+base64 = { version = "0.13" } 

@@ -16,19 +16,3 @@ lazy_static! {
     pub static ref ADMIN_A: Uuid = Uuid::from_str("000000AD-0000-0000-0000-000000000001").expect("uuid string is valid. qed");
     pub static ref ADMIN_B: Uuid = Uuid::from_str("000000AD-0000-0000-0000-000000000002").expect("uuid string is valid. qed");
 }
-
-#[cfg(feature = "jwt")]
-pub mod jwt {
-    use super::*;
-    use jsonwebtoken::{DecodingKey, EncodingKey};
-
-    pub static PRIV_KEY_BYTES: &[u8] = include_bytes!("../fixtures/test_priv.pem");
-    pub static PUB_KEY_BYTES: &[u8] = include_bytes!("../fixtures/test_pub.pem");
-
-    lazy_static! {
-        pub static ref JWT_ENCODING_KEY: EncodingKey =
-            EncodingKey::from_rsa_pem(PRIV_KEY_BYTES).expect("priv pem format is correct. qed");
-        pub static ref JWT_DECODING_KEY: DecodingKey =
-            DecodingKey::from_rsa_pem(PUB_KEY_BYTES).expect("pub pem format is correct. qed");
-    }
-}

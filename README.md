@@ -6,21 +6,6 @@ A collection of tools used for rust based backend projects.
 
 ```Cargo.toml
 [dependencies]
-atb = { version = "0.6.5", features = ["http"] }
+atb = { git = "https://github.com/aetheras-io/atb-rs", tag = "v0.13.0", features = ["eventsourcing", "fixtures"] }
+atb-types = { git = "https://github.com/aetheras-io/atb-rs", tag = "v0.13.0", features = ["jwt"] }
 ```
-
-```rs
-use atb::prelude::*;
-use actix_web;
-use uuid;
-...
-```
-
-## Available Features
-
-- Http (Actix)
-- Graphql (Juniper)
-- Sql (Sqlx)
-- JWT
-- Fixtures
-
