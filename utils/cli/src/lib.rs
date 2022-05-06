@@ -1,3 +1,5 @@
+pub use clap;
+
 use clap::{CommandFactory, FromArgMatches, Parser};
 
 pub trait AtbCli: Sized {
