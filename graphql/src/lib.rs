@@ -355,7 +355,7 @@ pub mod spec {
                 pub cursor: String,
             }
 
-            impl $crate::graphql::spec::Edge<$type> for $edge {
+            impl $crate::spec::Edge<$type> for $edge {
                 fn node(&self) -> &$type {
                     &self.node
                 }
@@ -371,7 +371,7 @@ pub mod spec {
             #[graphql(context = $context)]
             pub struct $connection {
                 pub edges: Vec<$edge>,
-                pub page_info: $crate::graphql::spec::PageInfo,
+                pub page_info: $crate::spec::PageInfo,
             }
         };
     }
