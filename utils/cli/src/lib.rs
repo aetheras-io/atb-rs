@@ -35,9 +35,19 @@ pub trait AtbCli: Sized {
         env!("CARGO_PKG_REPOSITORY").to_owned()
     }
 
-    /// Returns the client ID: `{impl_name}/v{impl_version}`
+    /// Returns the client ID: `{name}/v{version}`
     fn client_id() -> String {
         format!("{}/v{}", Self::name(), Self::version())
+    }
+
+    /// Returns git commit hash.  Requires build time helpers using atb-rs/utils/build
+    fn commit_hash() -> String {
+        std::env::var("ATB_CLI_GIT_COMMIT_HASH").unwrap_or_else(|_| "".to_owned())
+    }
+
+    /// Returns implementation.  Requires build time helpers using atb-rs/utils/build
+    fn impl_version() -> String {
+        std::env::var("ATB_CLI_IMPL_VERSION").unwrap_or_else(|_| "".to_owned())
     }
 
     /// Helper function used to parse the command line arguments
