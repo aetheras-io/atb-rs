@@ -53,7 +53,7 @@ pub trait AtbCli: Sized {
     }
 
     /// Helper function used to parse the command line arguments
-    fn parse() -> Self
+    fn from_args() -> Self
     where
         Self: Parser + Sized,
     {
