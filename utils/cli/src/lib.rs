@@ -1,6 +1,21 @@
 pub use clap;
 
 use clap::{CommandFactory, FromArgMatches, Parser};
+use serde::Serialize;
+use strum_macros::{Display, EnumString};
+
+pub type DateTime = chrono::DateTime<chrono::Utc>;
+
+#[derive(Debug, Parser)]
+pub struct BaseCli {
+    /// Activate debug mode
+    #[structopt(short, long, env = "APP_DEBUG")]
+    pub debug: bool,
+
+    /// Executing Environment
+    #[structopt(short, long, env = "APP_ENV", default_value = "dev")]
+    pub env: Environment,
+}
 
 pub trait AtbCli: Sized {
     /// Executable file name.
@@ -12,48 +27,61 @@ pub trait AtbCli: Sized {
             .unwrap_or_else(|| Self::name())
     }
 
-    /// Cargo crate name.
+    /// Application name.
     fn name() -> String {
-        env!("CARGO_PKG_NAME").to_owned()
+        "".to_owned()
     }
 
-    /// Cargo crate version.
+    /// Application version.
     fn version() -> String {
-        env!("CARGO_PKG_VERSION").to_owned()
+        "".to_owned()
     }
 
-    /// Cargo crate description.
+    /// Application authors.
+    fn authors() -> Vec<String> {
+        vec![]
+    }
+
+    /// Application description.
     fn description() -> String {
-        env!("CARGO_PKG_DESCRIPTION").to_owned()
+        "".to_owned()
     }
 
-    /// Cargo crate author.
-    fn author() -> String {
-        env!("CARGO_PKG_AUTHORS").to_owned()
+    /// Application repository.
+    fn repository() -> String {
+        "".to_owned()
     }
 
-    /// Cargo crate repository url
-    fn repository_url() -> String {
-        env!("CARGO_PKG_REPOSITORY").to_owned()
+    /// Returns implementation details.  
+    fn impl_version() -> String;
+
+    /// Returns git commit hash.
+    fn commit() -> String {
+        "".to_owned()
+    }
+
+    /// Returns git branch.
+    fn branch() -> String {
+        "".to_owned()
+    }
+
+    /// Returns OS platform.
+    fn platform() -> String {
+        "".to_owned()
+    }
+
+    /// Returns rustc version.
+    fn rustc_info() -> String {
+        "".to_owned()
     }
 
     /// Returns the client ID: `{name}/v{version}`
     fn client_id() -> String {
-        format!("{}/v{}", Self::name(), Self::version())
-    }
-
-    /// Returns git commit hash.  Requires build time helpers using atb-rs/utils/build
-    fn commit_hash() -> String {
-        std::env::var("ATB_CLI_GIT_COMMIT_HASH").unwrap_or_else(|_| "".to_owned())
-    }
-
-    /// Returns implementation.  Requires build time helpers using atb-rs/utils/build
-    fn impl_version() -> String {
-        std::env::var("ATB_CLI_IMPL_VERSION").unwrap_or_else(|_| "".to_owned())
+        format!("{}/v{}", Self::name(), Self::impl_version())
     }
 
     /// Helper function used to parse the command line arguments
-    fn from_args() -> Self
+    fn parse() -> Self
     where
         Self: Parser + Sized,
     {
@@ -77,15 +105,15 @@ pub trait AtbCli: Sized {
     {
         let app = <Self as CommandFactory>::command();
 
-        let mut full_version = Self::version();
-        full_version.push_str("\n");
+        let mut full_version = Self::impl_version();
+        full_version.push('\n');
 
         let name = Self::executable_name();
-        let author = Self::author();
+        let authors = ["authors [", &Self::authors().join(","), "]"].concat();
         let about = Self::description();
         let app = app
             .name(name)
-            .author(author.as_str())
+            .author(authors.as_str())
             .about(about.as_str())
             .version(full_version.as_str())
             .propagate_version(true)
@@ -95,5 +123,53 @@ pub trait AtbCli: Sized {
         let matches = app.try_get_matches_from(iter).unwrap_or_else(|e| e.exit());
 
         <Self as FromArgMatches>::from_arg_matches(&matches).unwrap_or_else(|e| e.exit())
+    }
+
+    fn info() -> ProcessInfo {
+        ProcessInfo {
+            name: Self::name(),
+            version: Self::version(),
+            branch: Self::branch(),
+            commit: Self::commit(),
+            platform: Self::platform(),
+            rustc: Self::rustc_info(),
+            start_time: chrono::Utc::now(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessInfo {
+    pub name: String,
+    pub version: String,
+    pub branch: String,
+    pub commit: String,
+    pub platform: String,
+    pub rustc: String,
+    pub start_time: DateTime,
+}
+
+#[derive(Debug, PartialEq, EnumString, Display)]
+pub enum Environment {
+    #[strum(serialize = "prod", serialize = "production")]
+    Production,
+    #[strum(serialize = "dev", serialize = "develop")]
+    Develop,
+    #[strum(serialize = "stag", serialize = "staging")]
+    Staging,
+}
+
+impl Environment {
+    pub fn prod(&self) -> bool {
+        matches!(self, Environment::Production)
+    }
+
+    pub fn dev(&self) -> bool {
+        matches!(self, Environment::Develop)
+    }
+
+    pub fn staging(&self) -> bool {
+        matches!(self, Environment::Staging)
     }
 }

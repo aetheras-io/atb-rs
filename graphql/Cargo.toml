@@ -11,5 +11,5 @@ thiserror = "1"
 byteorder = "1.3" 
 base64 = { version = "0.13" } 
 juniper = { version = "0.15.3" }
-sqlx = { version = "0.5.1", default-features = false, features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono", "json", "bigdecimal", "decimal", "bit-vec"] }
+sqlx = { version = "0.5", default-features = false, features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono", "json", "bigdecimal", "decimal", "bit-vec"] }
 quaint = { git = "https://github.com/prisma/quaint", rev = "131b92132d97385f21458696d939cfae0a03b7ad", features = ["postgresql", "serde-support", "json", "chrono", "uuid", "bigdecimal"] } 

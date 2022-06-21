@@ -5,4 +5,4 @@ authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2021"
 
 [dependencies]
-platforms = "2.0"
+rustc_version = "0.4.0"

@@ -1,8 +1,16 @@
-use platforms::*;
+use rustc_version::version_meta;
 use std::{borrow::Cow, env, fs, fs::File, io, io::Read, path::PathBuf, process::Command};
 
 /// Generate the `cargo:` key output
 pub fn generate_cargo_keys() {
+    let (platform, rustc_semver) = version_meta().map_or_else(
+        |e| {
+            println!("cargo:warning=rustc version_meta failed: {}", e);
+            ("".to_owned(), "".to_owned())
+        },
+        |r| (r.host.to_owned(), format!("{}-{:?}", r.semver, r.channel)),
+    );
+
     let commit = if let Ok(hash) = std::env::var("ATB_CLI_GIT_COMMIT_HASH") {
         Cow::from(hash.trim().to_owned())
     } else {
@@ -25,25 +33,35 @@ pub fn generate_cargo_keys() {
         }
     };
 
+    let branch = match Command::new("git")
+        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+    {
+        Ok(o) if o.status.success() => {
+            let branch = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+            Cow::from(branch)
+        }
+        Ok(o) => {
+            println!("cargo:warning=Git command failed with status: {}", o.status);
+            Cow::from("unknown")
+        }
+        Err(err) => {
+            println!("cargo:warning=Failed to execute git command: {}", err);
+            Cow::from("unknown")
+        }
+    };
+
+    println!("cargo:rustc-env=ATB_CLI_PLATFORM={}", platform);
+    println!("cargo:rustc-env=ATB_CLI_RUSTC_INFO={}", rustc_semver);
+    println!("cargo:rustc-env=ATB_CLI_GIT_COMMIT_HASH={}", commit);
+    println!("cargo:rustc-env=ATB_CLI_GIT_BRANCH={}", branch);
     println!(
         "cargo:rustc-env=ATB_CLI_IMPL_VERSION={}",
-        get_version(&commit)
+        get_version(&commit, &platform)
     )
 }
 
-fn get_platform() -> String {
-    let env_dash = if TARGET_ENV.is_some() { "-" } else { "" };
-
-    format!(
-        "{}-{}{}{}",
-        TARGET_ARCH.as_str(),
-        TARGET_OS.as_str(),
-        env_dash,
-        TARGET_ENV.map(|x| x.as_str()).unwrap_or(""),
-    )
-}
-
-fn get_version(impl_commit: &str) -> String {
+fn get_version(impl_commit: &str, platform: &str) -> String {
     let commit_dash = if impl_commit.is_empty() { "" } else { "-" };
 
     format!(
@@ -51,7 +69,7 @@ fn get_version(impl_commit: &str) -> String {
         std::env::var("CARGO_PKG_VERSION").unwrap_or_default(),
         commit_dash,
         impl_commit,
-        get_platform(),
+        platform,
     )
 }
 
