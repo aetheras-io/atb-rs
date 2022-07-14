@@ -30,6 +30,10 @@ impl<T> Take<T> {
     pub fn take(&mut self) -> Option<T> {
         std::mem::take(&mut self.0)
     }
+
+    pub fn insert(&mut self, item: T) -> &mut T {
+        self.0.insert(item)
+    }
 }
 
 impl<T> std::ops::Deref for Take<T> {
