@@ -97,12 +97,12 @@ pub trait AtbCli: Sized {
         // cli
     }
 
-    fn set_globals(debug: bool, env: Environment) {
+    fn set_globals(base: BaseCli) {
         DEBUG
-            .set(debug)
+            .set(base.debug)
             .expect("cli parse should only be executed once.");
         ENVIRONMENT
-            .set(env)
+            .set(base.env)
             .expect("cli parse should only be executed once.");
     }
 

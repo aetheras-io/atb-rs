@@ -1,6 +1,6 @@
 [package]
 name = "atb-build"
-version = "0.13.6"
+version = "0.13.7"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2021"
 
