@@ -156,7 +156,7 @@ pub trait AtbCli: Sized {
     }
 }
 
-pub fn service_info() -> &'static ProcessInfo {
+pub fn process_info() -> &'static ProcessInfo {
     PROCESS_INFO
         .get()
         .expect("static PROCESS_INFO has not been set.")
