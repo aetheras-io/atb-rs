@@ -1,6 +1,6 @@
 [package]
 name = "atb-types"
-version = "0.13.0"
+version = "0.13.6"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2021"
 

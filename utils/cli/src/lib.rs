@@ -1,19 +1,25 @@
 pub use clap;
+pub use once_cell;
 
 use clap::{CommandFactory, FromArgMatches, Parser};
+use once_cell::sync::OnceCell;
 use serde::Serialize;
 use strum_macros::{Display, EnumString};
 
 pub type DateTime = chrono::DateTime<chrono::Utc>;
 
+static PROCESS_INFO: OnceCell<ProcessInfo> = OnceCell::new();
+static ENVIRONMENT: OnceCell<Environment> = OnceCell::new();
+static DEBUG: OnceCell<bool> = OnceCell::new();
+
 #[derive(Debug, Parser)]
 pub struct BaseCli {
     /// Activate debug mode
-    #[structopt(short, long, env = "APP_DEBUG")]
+    #[clap(short, long, env = "APP_DEBUG")]
     pub debug: bool,
 
     /// Executing Environment
-    #[structopt(short, long, env = "APP_ENV", default_value = "dev")]
+    #[clap(short, long, env = "APP_ENV", default_value = "dev")]
     pub env: Environment,
 }
 
@@ -41,7 +47,6 @@ pub trait AtbCli: Sized {
     fn authors() -> Vec<String> {
         vec![]
     }
-
     /// Application description.
     fn description() -> String {
         "".to_owned()
@@ -85,7 +90,20 @@ pub trait AtbCli: Sized {
     where
         Self: Parser + Sized,
     {
+        PROCESS_INFO
+            .set(<Self as AtbCli>::info())
+            .expect("cli parse should only be executed once.");
         <Self as AtbCli>::from_iter(&mut std::env::args_os())
+        // cli
+    }
+
+    fn set_globals(debug: bool, env: Environment) {
+        DEBUG
+            .set(debug)
+            .expect("cli parse should only be executed once.");
+        ENVIRONMENT
+            .set(env)
+            .expect("cli parse should only be executed once.");
     }
 
     /// Helper function used to parse the command line arguments. This is the equivalent of
@@ -136,6 +154,22 @@ pub trait AtbCli: Sized {
             start_time: chrono::Utc::now(),
         }
     }
+}
+
+pub fn service_info() -> &'static ProcessInfo {
+    PROCESS_INFO
+        .get()
+        .expect("static PROCESS_INFO has not been set.")
+}
+
+pub fn env() -> &'static Environment {
+    ENVIRONMENT
+        .get()
+        .expect("static ENVIRONMENT has not been set.")
+}
+
+pub fn debug() -> bool {
+    *DEBUG.get().expect("static DEBUG has not been set.")
 }
 
 #[derive(Debug, Serialize)]
