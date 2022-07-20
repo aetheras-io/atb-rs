@@ -112,3 +112,89 @@ impl TaskService {
         Ok(())
     }
 }
+
+pub mod stream {
+    use super::*;
+    use atb::helpers::exponential_backoff_ms;
+
+    use async_trait::async_trait;
+    use futures::{FutureExt, Sink, Stream, StreamExt};
+    use tokio::time::{sleep, Duration};
+
+    pub const MAX_BACKOFF_MS: u64 = 32000;
+
+    #[async_trait]
+    pub trait StreamProcessor: Send + 'static {
+        type Stream: Stream<Item = Result<Self::Item, Self::Error>>
+            + Sink<Self::Item>
+            + Send
+            + 'static;
+        type Item: std::fmt::Debug + Send + 'static;
+        type Error: std::error::Error + Send + 'static;
+
+        fn identifier(&self) -> &str;
+        async fn connect(&mut self) -> anyhow::Result<Self::Stream>;
+        async fn handle(&mut self, message: Self::Item) -> anyhow::Result<()>;
+    }
+
+    pub struct StreamReactor<T> {
+        pub processor: T,
+    }
+
+    impl<T> StreamReactor<T>
+    where
+        T: StreamProcessor,
+    {
+        pub fn to_boxed_task_fn(
+            self,
+        ) -> impl FnOnce(Shutdown, ShutdownComplete) -> BoxFuture<'static, ()> {
+            move |shutdown, shutdown_complete| self.run(shutdown, shutdown_complete).boxed()
+        }
+
+        pub async fn run(mut self, mut shutdown: Shutdown, _shutdown_complete: ShutdownComplete) {
+            while !shutdown.is_shutdown() {
+                tokio::select! {
+                    _ = async {
+                        let mut connection_attempts = 0;
+                        loop {
+                            log::info!("StreamReactor connecting...");
+                            let stream = match self.processor.connect().await {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    let backoff = exponential_backoff_ms(connection_attempts, MAX_BACKOFF_MS);
+                                    log::info!(
+                                        "StreamReactor[{}] connect error: {}, attempts: {}, retry in {}ms",
+                                        self.processor.identifier(),
+                                        e,
+                                        connection_attempts,
+                                        backoff
+                                    );
+                                    sleep(Duration::from_millis(backoff)).await;
+                                    connection_attempts += 1;
+                                    continue;
+                                }
+                            };
+                            connection_attempts = 0;
+
+                            let (_write, mut read) = stream.split();
+
+                            while let Some(Ok(msg)) = read.next().await {
+                                if let Err(e) = self.processor.handle(msg).await {
+                                    log::info!("StreamReactor processor error: {}", e);
+                                }
+                            }
+                        }
+                    } => {
+                        log::info!("StreamReactor processor stopped?");
+                    },
+
+                    _ = shutdown.recv() => {
+                        log::info!("StreamReactor shutting down from signal");
+                        break;
+                    }
+                }
+            }
+            log::info!("StreamReactor stopped")
+        }
+    }
+}
