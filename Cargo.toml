@@ -12,7 +12,7 @@ env_logger = "0.8"
 ansi_term = "0.12"
 thiserror = "1"
 anyhow = "1"
-futures = "=0.3.12"
+futures = "0.3"
 lazy_static = "1.4"
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8.5"

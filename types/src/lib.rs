@@ -41,7 +41,7 @@ impl<T> std::ops::Deref for Take<T> {
 
     fn deref(&self) -> &Self::Target {
         match &self.0 {
-            Some(t) => &t,
+            Some(t) => t,
             None => panic!("value is already taken"),
         }
     }

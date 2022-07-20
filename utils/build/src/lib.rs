@@ -1,5 +1,13 @@
 use rustc_version::version_meta;
-use std::{borrow::Cow, env, fs, fs::File, io, io::Read, path::PathBuf, process::Command};
+use std::{
+    borrow::Cow,
+    env, fs,
+    fs::File,
+    io,
+    io::Read,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 /// Generate the `cargo:` key output
 pub fn generate_cargo_keys() {
@@ -111,7 +119,7 @@ pub fn rerun_if_git_head_changed() {
 }
 
 // Code taken from https://github.com/rustyhorde/vergen/blob/8d522db8c8e16e26c0fc9ea8e6b0247cbf5cca84/src/output/envvar.rs
-fn get_git_paths(path: &PathBuf) -> Result<Option<Vec<PathBuf>>, io::Error> {
+fn get_git_paths(path: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
     let git_dir_or_file = path.join(".git");
 
     if let Ok(metadata) = fs::metadata(&git_dir_or_file) {

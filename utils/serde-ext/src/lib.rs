@@ -21,7 +21,7 @@ where
 {
     match x {
         None => se.serialize_none(),
-        Some(s) if s.len() == 0 => se.serialize_none(),
+        Some(s) if s.is_empty() => se.serialize_none(),
         Some(s) => se.serialize_some(s),
     }
 }
@@ -33,7 +33,7 @@ where
     let opt = Option::<String>::deserialize(de)?;
     match opt {
         None => Ok(None),
-        Some(s) if &s == "" => Ok(None),
+        Some(s) if s.is_empty() => Ok(None),
         _ => Ok(opt),
     }
 }

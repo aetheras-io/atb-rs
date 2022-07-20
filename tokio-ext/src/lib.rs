@@ -1,7 +1,13 @@
 use std::future::Future;
 
+use atb::helpers::exponential_backoff_ms;
 use futures::future::BoxFuture;
-use tokio::sync::{broadcast, mpsc};
+use tokio::{
+    sync::{broadcast, mpsc},
+    time::{sleep, Duration},
+};
+
+pub const DEFAULT_MAX_BACKOFF_MS: u64 = 32000;
 
 pub type ShutdownComplete = mpsc::Sender<()>;
 
@@ -38,8 +44,17 @@ impl Shutdown {
     }
 }
 
+pub trait BoxFutureService:
+    FnOnce(Shutdown, mpsc::Sender<()>) -> BoxFuture<'static, ()> + Send
+{
+}
+impl<T: FnOnce(Shutdown, mpsc::Sender<()>) -> BoxFuture<'static, ()> + Send> BoxFutureService
+    for T
+{
+}
+
 pub struct TaskService {
-    tokio_tasks: Vec<Box<dyn FnOnce(Shutdown, mpsc::Sender<()>) -> BoxFuture<'static, ()> + Send>>,
+    tokio_tasks: Vec<Box<dyn BoxFutureService>>,
     notify_shutdown: broadcast::Sender<()>,
     shutdown_complete_tx: mpsc::Sender<()>,
 }
@@ -64,7 +79,7 @@ impl TaskService {
     /// when done.
     pub fn add_task<F>(&mut self, func: F)
     where
-        F: FnOnce(Shutdown, mpsc::Sender<()>) -> BoxFuture<'static, ()> + Send + 'static,
+        F: BoxFutureService + 'static,
     {
         self.tokio_tasks.push(Box::new(func));
     }
@@ -101,7 +116,7 @@ impl TaskService {
 
     async fn start(&mut self) -> anyhow::Result<()> {
         let mut handles = Vec::new();
-        for task in std::mem::replace(&mut self.tokio_tasks, vec![]) {
+        for task in std::mem::take(&mut self.tokio_tasks) {
             handles.push(tokio::spawn(task(
                 Shutdown::new(self.notify_shutdown.subscribe()),
                 self.shutdown_complete_tx.clone(),
@@ -113,15 +128,33 @@ impl TaskService {
     }
 }
 
+pub async fn retry_future<Factory, Fut, F, O, E>(f: Factory, retryable: F, max_attempts: u64) -> O
+where
+    Factory: Fn() -> Fut,
+    Fut: Future<Output = Result<O, E>>,
+    F: Fn(&E) -> bool,
+{
+    let mut attempts = 0;
+    loop {
+        match f().await {
+            Ok(o) => return o,
+            Err(e) => {
+                if attempts <= max_attempts && retryable(&e) {
+                    attempts += 1;
+                    let backoff = exponential_backoff_ms(attempts, DEFAULT_MAX_BACKOFF_MS);
+                    sleep(Duration::from_millis(backoff)).await;
+                    continue;
+                }
+            }
+        }
+    }
+}
+
 pub mod stream {
     use super::*;
-    use atb::helpers::exponential_backoff_ms;
 
     use async_trait::async_trait;
     use futures::{FutureExt, Sink, Stream, StreamExt};
-    use tokio::time::{sleep, Duration};
-
-    pub const MAX_BACKOFF_MS: u64 = 32000;
 
     #[async_trait]
     pub trait StreamProcessor: Send + 'static {
@@ -161,7 +194,10 @@ pub mod stream {
                             let stream = match self.processor.connect().await {
                                 Ok(s) => s,
                                 Err(e) => {
-                                    let backoff = exponential_backoff_ms(connection_attempts, MAX_BACKOFF_MS);
+                                    let backoff = exponential_backoff_ms(
+                                        connection_attempts,
+                                        DEFAULT_MAX_BACKOFF_MS
+                                    );
                                     log::info!(
                                         "StreamReactor[{}] connect error: {}, attempts: {}, retry in {}ms",
                                         self.processor.identifier(),
