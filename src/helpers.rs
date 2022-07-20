@@ -1,9 +1,10 @@
 /// Backoff calculator based off google's algorithm
-pub fn exponential_backoff_ms(count: u64) -> u64 {
+/// #NOTE, jitter is randomized in the range of 0-1000 ms
+pub fn exponential_backoff_ms(count: u64, max_backoff_ms: Option<u64>) -> u64 {
     use rand::Rng;
-
-    const MAX_BACKOFF_MS: u64 = 32000;
     let mut rng = rand::thread_rng();
-    let jitter_ms: u64 = rng.gen_range(0..1000);
-    std::cmp::min(2u64.pow(count as u32) + jitter_ms, MAX_BACKOFF_MS)
+    std::cmp::min(
+        2u64.pow(count as u32) + rng.gen_range(0..1000),
+        max_backoff_ms.unwrap_or(32000),
+    )
 }
