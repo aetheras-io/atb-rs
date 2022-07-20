@@ -3,6 +3,8 @@ use std::future::Future;
 use futures::future::BoxFuture;
 use tokio::sync::{broadcast, mpsc};
 
+pub type ShutdownComplete = mpsc::Sender<()>;
+
 #[derive(Debug)]
 pub struct Shutdown {
     shutdown: bool,
