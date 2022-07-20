@@ -6,15 +6,16 @@ REPO := github.com/${ORG}/${PROJECT}
 ROOT_DIR := $(CURDIR)
 SEM_VER := $(shell awk -F' = ' '$$1=="version"{print $$2;exit;}' ./Cargo.toml)
 
-sanity-build: 
-	cargo build --features http 
-	cargo build --features sql 
-	cargo build --features graphql 
-	cargo build --features "sql graphql" 
+build: 
 	cargo build --features fixtures 
-	cargo build --features jwt 
-	cargo build --features serde_utils 
+	cargo build --features eventsourcing 
 	cargo build --all-features
+	(cd types && cargo build)
+	(cd tokio-ext && cargo build)
+	(cd actix-ext && cargo build)
+	(cd graphql && cargo build)
+	(cd utils/cli && cargo build)
+	(cd utils/serde-ext && cargo build)
 
 tag:
 	git tag -a v${SEM_VER} -m "v${SEM_VER}"
