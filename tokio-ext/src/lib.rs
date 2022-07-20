@@ -167,7 +167,7 @@ pub mod stream {
 
         fn identifier(&self) -> &str;
         async fn connect(&mut self) -> anyhow::Result<Self::Stream>;
-        async fn handle(&mut self, message: Self::Item) -> anyhow::Result<()>;
+        async fn process(&mut self, message: Self::Item) -> anyhow::Result<()>;
     }
 
     pub struct StreamReactor<T> {
@@ -215,7 +215,7 @@ pub mod stream {
                             let (_write, mut read) = stream.split();
 
                             while let Some(Ok(msg)) = read.next().await {
-                                if let Err(e) = self.processor.handle(msg).await {
+                                if let Err(e) = self.processor.process(msg).await {
                                     log::info!("StreamReactor processor error: {}", e);
                                 }
                             }
