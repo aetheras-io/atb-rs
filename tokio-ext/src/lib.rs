@@ -84,7 +84,7 @@ impl TaskService {
         self.tokio_tasks.push(Box::new(func));
     }
 
-    pub fn get_signals(&self) -> (Shutdown, ShutdownComplete) {
+    pub fn signals(&self) -> (Shutdown, ShutdownComplete) {
         (
             Shutdown::new(self.notify_shutdown.subscribe()),
             self.shutdown_complete_tx.clone(),
