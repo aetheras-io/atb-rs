@@ -84,6 +84,13 @@ impl TaskService {
         self.tokio_tasks.push(Box::new(func));
     }
 
+    pub fn get_signals(&self) -> (Shutdown, ShutdownComplete) {
+        (
+            Shutdown::new(self.notify_shutdown.subscribe()),
+            self.shutdown_complete_tx.clone(),
+        )
+    }
+
     pub async fn run(mut self, shutdown: impl Future) {
         log::info!("TaskService Start");
         tokio::select! {
