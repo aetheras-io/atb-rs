@@ -28,7 +28,7 @@ pub mod jwt {
     lazy_static! {
         pub static ref JWT_ENCODING_KEY: EncodingKey =
             EncodingKey::from_rsa_pem(PRIV_KEY_BYTES).expect("priv pem format is correct. qed");
-        pub static ref JWT_DECODING_KEY: DecodingKey =
+        pub static ref JWT_DECODING_KEY: DecodingKey<'static> =
             DecodingKey::from_rsa_pem(PUB_KEY_BYTES).expect("pub pem format is correct. qed");
     }
 }

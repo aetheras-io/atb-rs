@@ -20,6 +20,7 @@ rand = "0.8.5"
 # Fixtures Optionals
 uuid = { version = "0.8", features = ["serde", "v1", "v4", "v5"], optional = true }
 fake = { version = "2.2", optional = true }
+jsonwebtoken = {version = "7.2", optional = true }
 
 # Eventsourcing
 lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.10.2", optional = true }
@@ -42,6 +43,7 @@ default = []
 all = [
   "eventsourcing",
   "fixtures",
+  "jwt",
 ]
 eventsourcing = [
   "lucidstream",
@@ -50,4 +52,7 @@ eventsourcing = [
 fixtures = [
   "fake/derive",
   "uuid",
+]
+jwt = [
+  "jsonwebtoken"
 ]
