@@ -65,6 +65,13 @@ pub mod jwt {
 
     pub struct Claims(ClaimsInner);
 
+    impl Claims {
+        /// Convert to the internal `T`
+        pub fn into_inner(self) -> T {
+            self.0
+        }
+    }
+
     #[derive(thiserror::Error, Debug)]
     pub enum Error {
         #[error("missing authorization header")]
