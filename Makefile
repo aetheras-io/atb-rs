@@ -6,13 +6,14 @@ REPO := github.com/${ORG}/${PROJECT}
 ROOT_DIR := $(CURDIR)
 SEM_VER := $(shell awk -F' = ' '$$1=="version"{print $$2;exit;}' ./Cargo.toml)
 
+# #FIXME this build step isn't running properly
 build: 
 	cargo build --features fixtures 
 	cargo build --features eventsourcing 
 	cargo build --all-features
 	(cd types && cargo build)
 	(cd tokio-ext && cargo build)
-	(cd actix-ext && cargo build)
+	(cd actix-ext && cargo build --features all)
 	(cd graphql && cargo build)
 	(cd utils/cli && cargo build)
 	(cd utils/serde-ext && cargo build)

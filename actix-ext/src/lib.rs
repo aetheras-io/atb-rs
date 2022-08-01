@@ -67,7 +67,7 @@ pub mod jwt {
 
     impl Claims {
         /// Convert to the internal `T`
-        pub fn into_inner(self) -> T {
+        pub fn into_inner(self) -> ClaimsInner {
             self.0
         }
     }
