@@ -72,6 +72,14 @@ pub mod jwt {
         }
     }
 
+    impl std::ops::Deref for Claims {
+        type Target = ClaimsInner;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
     #[derive(thiserror::Error, Debug)]
     pub enum Error {
         #[error("missing authorization header")]
