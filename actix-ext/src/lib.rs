@@ -70,6 +70,10 @@ pub mod jwt {
         pub fn into_inner(self) -> ClaimsInner {
             self.0
         }
+
+        pub fn inner(&self) -> &ClaimsInner {
+            &self.0
+        }
     }
 
     #[derive(thiserror::Error, Debug)]
