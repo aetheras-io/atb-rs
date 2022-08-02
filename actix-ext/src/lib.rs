@@ -70,8 +70,12 @@ pub mod jwt {
         pub fn into_inner(self) -> ClaimsInner {
             self.0
         }
+    }
 
-        pub fn inner(&self) -> &ClaimsInner {
+    impl std::ops::Deref for Claims {
+        type Target = ClaimsInner;
+
+        fn deref(&self) -> &Self::Target {
             &self.0
         }
     }
