@@ -9,6 +9,7 @@ SEM_VER := $(shell awk -F' = ' '$$1=="version"{print $$2;exit;}' ./Cargo.toml)
 # #FIXME this build step isn't running properly
 build: 
 	cargo build --features fixtures 
+	cargo build --features jwt 
 	cargo build --features eventsourcing 
 	cargo build --all-features
 	(cd types && cargo build)
