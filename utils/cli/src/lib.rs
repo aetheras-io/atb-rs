@@ -161,14 +161,20 @@ pub fn debug() -> bool {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessInfo {
-    pub environment: Environment,
-    pub name: String,
-    pub version: String,
-    pub branch: String,
-    pub commit: String,
-    pub platform: String,
-    pub rustc: String,
-    pub start_time: DateTime,
+    environment: Environment,
+    name: String,
+    version: String,
+    branch: String,
+    commit: String,
+    platform: String,
+    rustc: String,
+    start_time: DateTime,
+}
+
+impl ProcessInfo {
+    pub fn env(&self) -> &Environment {
+        &self.environment
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, EnumString, Display)]
