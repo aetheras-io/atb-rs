@@ -223,7 +223,8 @@ pub mod stream {
 
                             while let Some(Ok(msg)) = read.next().await {
                                 if let Err(e) = self.processor.process(msg).await {
-                                    log::info!("StreamReactor processor error: {}", e);
+                                    log::info!("StreamReactor processor error: {}, restarting", e);
+                                    break;
                                 }
                             }
                         }

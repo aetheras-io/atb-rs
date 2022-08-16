@@ -7,9 +7,18 @@ edition = "2021"
 [dependencies]
 atb-types = { path = "../types", optional = true }
 
+actix-rt = "2.6"
+actix = "0.13.0"
+# Compress-zstd conflicts with some libs that use it (version wise).
+actix-web = { version = "4.0", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "cookies"] } 
+actix-cors = "0.6.1"
+actix-web-httpauth = "0.6.0"
+actix-web-actors = "4.1"
+actix-service = "2"
+
 log = "0.4"
 futures = "0.3"
-thiserror = {version = "1", optional = true } 
+thiserror = { version = "1" } 
 time = { version = "0.3", optional = true }
 
 # Graphql
@@ -18,13 +27,6 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true } 
 # #HACK for tokio1 since libraries are all over the place 
 # juniper_actix = { version = "0.5.0-dev", optional = true }
-
-actix-rt = "2.6"
-# Compress-zstd conflicts with some libs that use it (version wise).
-actix-web = { version = "4.0", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "cookies"] } 
-actix-cors = "0.6.1"
-actix-web-httpauth = "0.6.0"
-actix-service = "2"
 
 [features]
 default = []
@@ -44,6 +46,5 @@ graphql-juniper= [
 ]
 jwt = [
   "atb-types/jwt",
-  "thiserror",
   "time",
 ]

@@ -1,3 +1,5 @@
+pub mod websockets;
+
 use std::any;
 use std::ops::Deref;
 
