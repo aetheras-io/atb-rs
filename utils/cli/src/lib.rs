@@ -9,18 +9,16 @@ use strum_macros::{Display, EnumString};
 pub type DateTime = chrono::DateTime<chrono::Utc>;
 
 static PROCESS_INFO: OnceCell<ProcessInfo> = OnceCell::new();
-static ENVIRONMENT: OnceCell<Environment> = OnceCell::new();
 static DEBUG: OnceCell<bool> = OnceCell::new();
 
 #[derive(Debug, Parser)]
 pub struct BaseCli {
-    /// Activate debug mode
-    #[clap(short, long, env = "APP_DEBUG")]
-    pub debug: bool,
-
     /// Executing Environment
-    #[clap(short, long, env = "APP_ENV", default_value = "dev")]
+    #[clap(short, long, env = "ATB_CLI_ENV", default_value = "dev")]
     pub env: Environment,
+    /// Activate debug mode
+    #[clap(short, long, env = "ATB_CLI_DEBUG")]
+    pub debug: bool,
 }
 
 pub trait AtbCli: Sized {
@@ -90,26 +88,32 @@ pub trait AtbCli: Sized {
     where
         Self: Parser + Sized,
     {
-        PROCESS_INFO
-            .set(<Self as AtbCli>::info())
-            .expect("cli parse should only be executed once.");
         <Self as AtbCli>::from_iter(&mut std::env::args_os())
-        // cli
     }
 
-    fn set_globals(base: BaseCli) {
+    fn set_globals(base: &BaseCli) {
+        PROCESS_INFO
+            .set(ProcessInfo {
+                name: Self::name(),
+                version: Self::version(),
+                branch: Self::branch(),
+                commit: Self::commit(),
+                platform: Self::platform(),
+                rustc: Self::rustc_info(),
+                start_time: chrono::Utc::now(),
+                environment: base.env.clone(),
+            })
+            .expect("cli parse should only be executed once.");
+
         DEBUG
             .set(base.debug)
-            .expect("cli parse should only be executed once.");
-        ENVIRONMENT
-            .set(base.env)
             .expect("cli parse should only be executed once.");
     }
 
     /// Helper function used to parse the command line arguments. This is the equivalent of
     /// [`clap::Parser::parse_from`].
     ///
-    /// To allow running the node without subcommand, it also sets a few more settings:
+    /// To allow running the command without subcommand, it also sets a few more settings:
     /// [`clap::Command::propagate_version`], [`clap::Command::args_conflicts_with_subcommands`],
     /// [`clap::Command::subcommand_negates_reqs`].
     ///
@@ -142,30 +146,12 @@ pub trait AtbCli: Sized {
 
         <Self as FromArgMatches>::from_arg_matches(&matches).unwrap_or_else(|e| e.exit())
     }
-
-    fn info() -> ProcessInfo {
-        ProcessInfo {
-            name: Self::name(),
-            version: Self::version(),
-            branch: Self::branch(),
-            commit: Self::commit(),
-            platform: Self::platform(),
-            rustc: Self::rustc_info(),
-            start_time: chrono::Utc::now(),
-        }
-    }
 }
 
 pub fn process_info() -> &'static ProcessInfo {
     PROCESS_INFO
         .get()
         .expect("static PROCESS_INFO has not been set.")
-}
-
-pub fn env() -> &'static Environment {
-    ENVIRONMENT
-        .get()
-        .expect("static ENVIRONMENT has not been set.")
 }
 
 pub fn debug() -> bool {
@@ -175,6 +161,7 @@ pub fn debug() -> bool {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessInfo {
+    pub environment: Environment,
     pub name: String,
     pub version: String,
     pub branch: String,
@@ -184,7 +171,7 @@ pub struct ProcessInfo {
     pub start_time: DateTime,
 }
 
-#[derive(Debug, PartialEq, EnumString, Display)]
+#[derive(Clone, Debug, PartialEq, Serialize, EnumString, Display)]
 pub enum Environment {
     #[strum(serialize = "prod", serialize = "production")]
     Production,
