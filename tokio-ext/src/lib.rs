@@ -96,11 +96,11 @@ impl TaskService {
         tokio::select! {
             res = self.start() => {
                 if let Err(err) = res {
-                    log::error!("server failed: {}", err);
+                    log::error!("TaskService failed: {}", err);
                 }
             }
             _ = shutdown => {
-                log::info!("server shutting down signal");
+                log::warn!("TaskService shutting down");
             }
         }
         log::info!("TaskService stopped");
