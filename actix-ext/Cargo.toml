@@ -1,6 +1,6 @@
 [package]
 name = "atb-actix-ext"
-version = "0.14.4"
+version = "0.14.5"
 authors = ["Denis Tsai <denistsai@aetheras.io>"]
 edition = "2021"
 
