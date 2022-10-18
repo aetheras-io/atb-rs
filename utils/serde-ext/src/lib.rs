@@ -50,6 +50,5 @@ pub fn de_base64_as_bytes<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let b64_str = String::deserialize(de)?;
-    base64::decode(b64_str).map_err(serde::de::Error::custom)
+    String::deserialize(de).and_then(|s| base64::decode(&s).map_err(serde::de::Error::custom))
 }

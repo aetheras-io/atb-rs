@@ -9,3 +9,29 @@ pub fn exponential_backoff_ms(count: u64, max_backoff_ms: u64) -> u64 {
         max_backoff_ms,
     )
 }
+
+pub trait InspectError {
+    fn inspect_err(self, message: &str) -> Self;
+}
+
+impl<T, E: std::error::Error + 'static> InspectError for Result<T, E> {
+    fn inspect_err(self, message: &str) -> Self {
+        if let Err(e) = &self {
+            log::error!("{}: {:?}", message, e);
+        }
+        self
+    }
+}
+
+pub trait Inspect {
+    fn inspect(self, message: &str) -> Self;
+}
+
+impl<T: std::fmt::Debug, E> Inspect for Result<T, E> {
+    fn inspect(self, message: &str) -> Self {
+        if let Ok(r) = &self {
+            log::info!("{}: {:?}", message, r);
+        }
+        self
+    }
+}
