@@ -6,7 +6,10 @@ pub mod includes {
     pub use futures;
     pub use log;
     pub use thiserror;
+    pub use once_cell;
 }
+#[cfg(feature = "fixtures")]
+pub use atb_fixtures_utils as fixtures;
 
 #[cfg(feature = "eventsourcing")]
 pub mod eventsourcing {

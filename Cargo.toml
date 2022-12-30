@@ -38,13 +38,15 @@ edition.workspace = true
 repository.workspace = true
 
 [dependencies]
+atb-fixtures-utils = { path = "./utils/fixtures", optional = true }
+
 log = { workspace = true }
 env_logger = { workspace = true } 
 ansi_term = { workspace = true } 
 thiserror = { workspace = true } 
 anyhow = { workspace = true } 
 futures = { workspace = true } 
-jsonwebtoken = { workspace = true, optional = true }
+once_cell = { workspace = true }
 
 chrono = { version = "0.4.21", features = ["serde"] }
 rand = "0.8.5"
@@ -58,12 +60,11 @@ lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = 
 default = []
 all = [
   "eventsourcing",
-  "jwt",
 ]
 eventsourcing = [
   "lucidstream",
   "lucidstream-ges",
 ]
-jwt = [
-  "jsonwebtoken"
+fixtures = [
+  "atb-fixtures-utils/jwt"
 ]
