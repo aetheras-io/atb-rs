@@ -1,0 +1,17 @@
+[package]
+name = "fixtures"
+version.workspace = true 
+authors.workspace = true 
+edition.workspace = true 
+repository.workspace = true
+
+[dependencies]
+once_cell = { workspace = true } 
+jsonwebtoken = { workspace = true, optional = true }
+
+uuid = { version = "0.8", features = ["serde", "v1", "v4", "v5"] }
+fake = { version = "2.5", features = ["derive"] }
+
+[features]
+default = []
+jwt = ["jsonwebtoken"]

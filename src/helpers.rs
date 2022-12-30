@@ -1,3 +1,5 @@
+use std::fmt;
+
 /// Backoff calculator based off google's algorithm
 /// #NOTE, jitter is randomized in the range of 0-1000 ms
 /// `max_backoff_ms` is suggested to be 32000ms to 64000ms by google
@@ -33,5 +35,23 @@ impl<T: std::fmt::Debug, E> Inspect for Result<T, E> {
             log::info!("{}: {:?}", message, r);
         }
         self
+    }
+}
+
+pub struct Debuggable<T: ?Sized> {
+    text: &'static str,
+    value: T,
+}
+
+impl<T: ?Sized> fmt::Debug for Debuggable<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.text)
+    }
+}
+
+impl<T: ?Sized> ::std::ops::Deref for Debuggable<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
     }
 }

@@ -14,10 +14,10 @@ static DEBUG: OnceCell<bool> = OnceCell::new();
 #[derive(Debug, Parser)]
 pub struct BaseCli {
     /// Executing Environment
-    #[clap(short, long, env = "ATB_CLI_ENV", default_value = "dev")]
+    #[arg(short, long, env = "ATB_CLI_ENV", default_value = "dev")]
     pub env: Environment,
     /// Activate debug mode
-    #[clap(short, long, env = "ATB_CLI_DEBUG")]
+    #[arg(short, long, env = "ATB_CLI_DEBUG")]
     pub debug: bool,
 }
 
@@ -135,9 +135,9 @@ pub trait AtbCli: Sized {
         let about = Self::description();
         let app = app
             .name(name)
-            .author(authors.as_str())
-            .about(about.as_str())
-            .version(full_version.as_str())
+            .author(authors)
+            .about(about)
+            .version(full_version)
             .propagate_version(true)
             .args_conflicts_with_subcommands(true)
             .subcommand_negates_reqs(true);

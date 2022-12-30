@@ -1,13 +1,9 @@
 pub mod helpers;
 pub mod logging;
 
-#[cfg(feature = "fixtures")]
-pub mod fixtures;
-
 pub mod includes {
     pub use anyhow;
     pub use futures;
-    pub use lazy_static;
     pub use log;
     pub use thiserror;
 }

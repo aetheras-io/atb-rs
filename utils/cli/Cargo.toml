@@ -1,13 +1,15 @@
 [package]
-name = "atb-cli"
-version = "0.14.5"
-authors = ["Denis Tsai <denistsai@aetheras.io>"]
-edition = "2021"
+name = "atb-cli-utils"
+version.workspace = true 
+authors.workspace = true 
+edition.workspace = true 
+repository.workspace = true
 
 [dependencies]
-clap = { version = "3", features = ["derive", "env", "cargo"] }
+serde = { workspace = true }
+
+clap = { version = "4", features = ["derive", "env", "cargo", "string"] }
+chrono = { version = "0.4.21", features = ["serde"] }
 once_cell = "1"
 strum = "0.24"
 strum_macros = "0.24"
-chrono = { version = "0.4.21", features = ["serde"] }
-serde = { version = "1", features = ["derive"] }

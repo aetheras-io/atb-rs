@@ -1,11 +1,17 @@
 [package]
 name = "atb-actix-ext"
-version = "0.14.5"
-authors = ["Denis Tsai <denistsai@aetheras.io>"]
-edition = "2021"
+version.workspace = true 
+authors.workspace = true 
+edition.workspace = true 
+repository.workspace = true
 
 [dependencies]
-atb-types = { path = "../types", optional = true }
+atb-types = { path = "../../types", optional = true }
+
+log = { workspace = true } 
+thiserror = {  workspace = true } 
+futures = { workspace = true }  
+serde = { workspace = true, optional = true }
 
 actix-rt = "2.6"
 actix = "0.13.0"
@@ -16,14 +22,10 @@ actix-web-httpauth = "0.6.0"
 actix-web-actors = "4.1"
 actix-service = "2"
 
-log = "0.4"
-futures = "0.3"
-thiserror = { version = "1" } 
 time = { version = "0.3", optional = true }
 
 # Graphql
 juniper = { version = "0.15.3", optional = true }
-serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true } 
 # #HACK for tokio1 since libraries are all over the place 
 # juniper_actix = { version = "0.5.0-dev", optional = true }

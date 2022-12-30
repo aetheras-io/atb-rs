@@ -57,21 +57,20 @@ pub struct TaskService {
     tokio_tasks: Vec<Box<dyn BoxFutureService>>,
     notify_shutdown: broadcast::Sender<()>,
     shutdown_complete_tx: mpsc::Sender<()>,
+    shutdown_complete_rx: mpsc::Receiver<()>,
 }
 
 impl TaskService {
-    pub fn new() -> (Self, mpsc::Receiver<()>) {
+    pub fn new() -> Self {
         let (notify_shutdown, _) = broadcast::channel(1);
         let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
 
-        (
-            Self {
-                tokio_tasks: Vec::new(),
-                notify_shutdown,
-                shutdown_complete_tx,
-            },
+        Self {
+            tokio_tasks: Vec::new(),
+            notify_shutdown,
+            shutdown_complete_tx,
             shutdown_complete_rx,
-        )
+        }
     }
 
     /// add an `FnOnce` which produces a BoxFuture to be spawned as a tokio task.
@@ -107,8 +106,8 @@ impl TaskService {
 
         // #NOTE `self.notify_shutdown` is now dropped, `notify_shutdown` will now fire to all
         // spawned tasks indefinitely.  This in turn should break the task loops and drop the
-        // clones of `shutdown_complete_tx`.  Now the outer thread / caller will be waiting on
-        // the `shutdown_complete_rx`, waiting gracefully for all tasks to finish
+        // clones of `shutdown_complete_tx`.  Now the outer thread / caller will be waiting
+        // gracefully on the `shutdown_complete_rx` for all tasks to finish
         //
         // The following "signaling" happens:
         // let TaskService {
@@ -119,6 +118,11 @@ impl TaskService {
         // drop(tokio_tasks);
         // drop(notify_shutdown);
         // drop(shutdown_complete_tx);
+        // drop(shutdown_complete_rx);
+    }
+
+    pub async fn join(&mut self) {
+        let _ = self.shutdown_complete_rx.recv().await;
     }
 
     async fn start(&mut self) -> anyhow::Result<()> {
