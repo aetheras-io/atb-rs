@@ -90,19 +90,53 @@ impl TaskService {
         )
     }
 
-    pub async fn run(mut self, shutdown: impl Future) {
-        log::info!("TaskService Start");
-        tokio::select! {
-            res = self.start() => {
-                if let Err(err) = res {
-                    log::error!("TaskService failed: {}", err);
-                }
-            }
-            _ = shutdown => {
-                log::warn!("TaskService shutting down");
-            }
-        }
-        log::info!("TaskService stopped");
+    // Split is useful if the task service isn't the last blocking item in the caller's scope. For
+    // example:
+    // ```rs
+    // fn main() {
+    //  //setup
+    //  let (service_worker, service_shutdown_complete) = service.split(tokio::signal::ctrl_c);
+    //  runtime.spawn(service_worker);
+    //  runtime.block_on(something_else);
+    //  let _ = service_shutdown_complete.rcv().await?;
+    // }
+    //
+    // ```
+    pub fn split(self, shutdown: impl Future) -> (impl Future, mpsc::Receiver<()>) {
+        let Self {
+            tokio_tasks,
+            notify_shutdown,
+            shutdown_complete_tx,
+            shutdown_complete_rx,
+        } = self;
+
+        (
+            TaskService::run(tokio_tasks, notify_shutdown, shutdown_complete_tx, shutdown),
+            shutdown_complete_rx,
+        )
+    }
+
+    // Run to completion is useful if this is the last blocking item in the caller's scope.  For
+    // example:
+    // ```rs
+    // fn main() {
+    //  //setup
+    //  runtime.block_on(service.run_to_completion());
+    // }
+    //
+    // ```
+    // Runtime.block_on(service.run_to_completion()) is the last call
+    pub async fn run_to_completion(self, shutdown: impl Future) {
+        let Self {
+            tokio_tasks,
+            notify_shutdown,
+            shutdown_complete_tx,
+            mut shutdown_complete_rx,
+        } = self;
+
+        TaskService::run(tokio_tasks, notify_shutdown, shutdown_complete_tx, shutdown).await;
+        let _ = shutdown_complete_rx.recv().await;
+        log::info!("TaskService shutdown completed");
 
         // #NOTE `self.notify_shutdown` is now dropped, `notify_shutdown` will now fire to all
         // spawned tasks indefinitely.  This in turn should break the task loops and drop the
@@ -121,21 +155,32 @@ impl TaskService {
         // drop(shutdown_complete_rx);
     }
 
-    pub async fn join(&mut self) {
-        let _ = self.shutdown_complete_rx.recv().await;
-    }
+    async fn run(
+        tokio_tasks: Vec<Box<dyn BoxFutureService>>,
+        notify_shutdown: broadcast::Sender<()>,
+        shutdown_complete_tx: mpsc::Sender<()>,
+        shutdown: impl Future,
+    ) {
+        let start = async move {
+            let mut handles = Vec::new();
+            for task in tokio_tasks.into_iter() {
+                handles.push(tokio::spawn(task(
+                    Shutdown::new(notify_shutdown.subscribe()),
+                    shutdown_complete_tx.clone(),
+                )));
+            }
 
-    async fn start(&mut self) -> anyhow::Result<()> {
-        let mut handles = Vec::new();
-        for task in std::mem::take(&mut self.tokio_tasks) {
-            handles.push(tokio::spawn(task(
-                Shutdown::new(self.notify_shutdown.subscribe()),
-                self.shutdown_complete_tx.clone(),
-            )));
+            futures::future::join_all(handles).await;
+        };
+
+        log::info!("TaskService started");
+        tokio::select! {
+            _ = start => {}
+            _ = shutdown => {
+                log::warn!("TaskService shutting down");
+            }
         }
-
-        futures::future::join_all(handles).await;
-        Ok(())
+        log::info!("TaskService stopped");
     }
 }
 

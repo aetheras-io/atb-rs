@@ -13,8 +13,8 @@ semver:
 
 # #FIXME this build step isn't running properly
 build: 
-	cargo build --features jwt 
-	cargo build --features eventsourcing 
+	cargo build --features fixtures 
+	cargo build --features eventsourcing
 	cargo build --all-features
 	(cd types && cargo build)
 	(cd ext/tokio && cargo build)
