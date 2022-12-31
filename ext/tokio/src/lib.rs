@@ -57,7 +57,7 @@ pub struct TaskService {
     tokio_tasks: Vec<Box<dyn BoxFutureService>>,
     notify_shutdown: broadcast::Sender<()>,
     shutdown_complete_tx: mpsc::Sender<()>,
-    shutdown_complete_rx: mpsc::Receiver<()>,
+    shutdown_complete_rx: Option<mpsc::Receiver<()>>,
 }
 
 impl TaskService {
@@ -69,7 +69,7 @@ impl TaskService {
             tokio_tasks: Vec::new(),
             notify_shutdown,
             shutdown_complete_tx,
-            shutdown_complete_rx,
+            shutdown_complete_rx: Some(shutdown_complete_rx),
         }
     }
 
@@ -90,77 +90,39 @@ impl TaskService {
         )
     }
 
-    // Split is useful if the task service isn't the last blocking item in the caller's scope. For
-    // example:
-    // ```rs
-    // fn main() {
-    //  //setup
-    //  let (service_worker, service_shutdown_complete) = service.split(tokio::signal::ctrl_c);
-    //  runtime.spawn(service_worker);
-    //  runtime.block_on(something_else);
-    //  let _ = service_shutdown_complete.rcv().await?;
-    // }
-    //
-    // ```
-    pub fn split(self, shutdown: impl Future) -> (impl Future, mpsc::Receiver<()>) {
-        let Self {
-            tokio_tasks,
-            notify_shutdown,
-            shutdown_complete_tx,
-            shutdown_complete_rx,
-        } = self;
+    pub fn take_completion_handle(&mut self) -> BoxFuture<'static, ()> {
+        let mut rx = self
+            .shutdown_complete_rx
+            .take()
+            .expect("completion_handle can only be taken once");
 
-        (
-            TaskService::run(tokio_tasks, notify_shutdown, shutdown_complete_tx, shutdown),
-            shutdown_complete_rx,
-        )
+        Box::pin(async move {
+            let _ = rx.recv().await;
+            log::info!("TaskService shutdown completed");
+        })
     }
 
-    // Run to completion is useful if this is the last blocking item in the caller's scope.  For
-    // example:
+    // Run will run until all tasks complete.  If the shutdown_complete_handle is taken, it is the
+    // calling scope's responsibility to wait until all tasks complete.  For example:
     // ```rs
     // fn main() {
     //  //setup
-    //  runtime.block_on(service.run_to_completion());
+    //  let services_complete = service.take_completion_handle();
+    //  runtime.spawn(service.run(tokio::signal::ctrl_c()));
+    //  // ..other stuff
+    //  runtime.block_on(services_complete);
     // }
     //
     // ```
     // Runtime.block_on(service.run_to_completion()) is the last call
-    pub async fn run_to_completion(self, shutdown: impl Future) {
+    pub async fn run(self, shutdown: impl Future) {
         let Self {
             tokio_tasks,
             notify_shutdown,
             shutdown_complete_tx,
-            mut shutdown_complete_rx,
+            shutdown_complete_rx,
         } = self;
 
-        TaskService::run(tokio_tasks, notify_shutdown, shutdown_complete_tx, shutdown).await;
-        let _ = shutdown_complete_rx.recv().await;
-        log::info!("TaskService shutdown completed");
-
-        // #NOTE `self.notify_shutdown` is now dropped, `notify_shutdown` will now fire to all
-        // spawned tasks indefinitely.  This in turn should break the task loops and drop the
-        // clones of `shutdown_complete_tx`.  Now the outer thread / caller will be waiting
-        // gracefully on the `shutdown_complete_rx` for all tasks to finish
-        //
-        // The following "signaling" happens:
-        // let TaskService {
-        //     tokio_tasks,
-        //     notify_shutdown,
-        //     shutdown_complete_tx,
-        // } = self;
-        // drop(tokio_tasks);
-        // drop(notify_shutdown);
-        // drop(shutdown_complete_tx);
-        // drop(shutdown_complete_rx);
-    }
-
-    async fn run(
-        tokio_tasks: Vec<Box<dyn BoxFutureService>>,
-        notify_shutdown: broadcast::Sender<()>,
-        shutdown_complete_tx: mpsc::Sender<()>,
-        shutdown: impl Future,
-    ) {
         let start = async move {
             let mut handles = Vec::new();
             for task in tokio_tasks.into_iter() {
@@ -181,6 +143,27 @@ impl TaskService {
             }
         }
         log::info!("TaskService stopped");
+
+        if let Some(mut rx) = shutdown_complete_rx {
+            let _ = rx.recv().await;
+            log::info!("TaskService shutdown completed");
+        }
+
+        // #NOTE `self.notify_shutdown` is now dropped, `notify_shutdown` will now fire to all
+        // spawned tasks indefinitely.  This in turn should break the task loops and drop the
+        // clones of `shutdown_complete_tx`.  Now the outer thread / caller will be waiting
+        // gracefully on the `shutdown_complete_rx` for all tasks to finish
+        //
+        // The following "signaling" happens:
+        // let TaskService {
+        //     tokio_tasks,
+        //     notify_shutdown,
+        //     shutdown_complete_tx,
+        // } = self;
+        // drop(tokio_tasks);
+        // drop(notify_shutdown);
+        // drop(shutdown_complete_tx);
+        // drop(shutdown_complete_rx);
     }
 }
 
