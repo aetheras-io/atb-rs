@@ -68,3 +68,9 @@ eventsourcing = [
 fixtures = [
   "atb-fixtures-utils/jwt"
 ]
+uuidv0_8 = [
+  "atb-fixtures-utils/uuidv0_8"
+]
+uuidv1 = [
+  "atb-fixtures-utils/uuidv1"
+]

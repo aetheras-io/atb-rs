@@ -6,7 +6,11 @@ pub mod fixtures;
 
 pub mod prelude {
     pub use chrono;
-    pub use uuid;
+    #[cfg(feature = "uuidv1")]
+    pub use uuidv1 as uuid;
+    #[cfg(feature = "uuidv0_8")]
+    pub use uuidv0_8 as uuid;
+    
 
     pub use super::*;
 
@@ -15,7 +19,11 @@ pub mod prelude {
 }
 
 pub use chrono::{Duration, Utc};
-pub use uuid::Uuid;
+#[cfg(feature = "uuidv1")]
+pub use uuidv1::Uuid;
+#[cfg(feature = "uuidv0_8")]
+pub use uuidv0_8::Uuid;
+
 
 pub type DateTime = chrono::DateTime<Utc>;
 

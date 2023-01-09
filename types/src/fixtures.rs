@@ -1,6 +1,10 @@
 use lazy_static::lazy_static;
 use std::str::FromStr;
-use uuid::Uuid;
+
+#[cfg(feature = "uuidv1")]
+use uuidv1::Uuid;
+#[cfg(feature = "uuidv0_8")]
+use uuidv0_8::Uuid;
 
 pub use fake;
 

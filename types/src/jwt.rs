@@ -5,6 +5,10 @@ use std::fmt::Display;
 use jsonwebtoken::{self as jwt, crypto, errors::Error as JwtError, Algorithm};
 use lazy_static::lazy_static;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+#[cfg(feature = "uuidv1")]
+use uuidv1::Error as UuidError;
+#[cfg(feature = "uuidv0_8")]
+use uuidv0_8::Error as UuidError;
 
 pub use jsonwebtoken::{DecodingKey, EncodingKey, Header};
 
@@ -121,7 +125,7 @@ impl Claims {
         &self.sub
     }
 
-    pub fn subject_as_uuid(&self) -> Result<Uuid, uuid::Error> {
+    pub fn subject_as_uuid(&self) -> Result<Uuid, UuidError> {
         Uuid::parse_str(&self.sub)
     }
 

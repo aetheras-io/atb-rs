@@ -35,7 +35,8 @@ default = []
 all = [
   "jwt",
   "graphql-juniper",
-  "zstd"
+  "zstd",
+  "uuidv1"
 ]
 zstd = [
   "actix-web/compress-zstd"
@@ -49,4 +50,10 @@ graphql-juniper= [
 jwt = [
   "atb-types/jwt",
   "time",
+]
+uuidv1 = [
+  "atb-types/uuidv1",
+]
+uuidv0_8 = [
+  "atb-types/uuidv0_8",
 ]
