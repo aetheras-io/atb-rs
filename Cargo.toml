@@ -27,6 +27,7 @@ futures = "0.3"
 once_cell = "1"
 serde = { version = "1", features = ["derive"] }
 jsonwebtoken = { version = "8.2" }
+uuid = { version = "1", features = ["serde", "v1", "v4", "v5"] }
 
 # We will generally lock on MINOR versions to allow for some patch wiggle room at the library 
 # importer, in case some small bug fix happens in the patches

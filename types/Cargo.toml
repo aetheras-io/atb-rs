@@ -6,7 +6,7 @@ edition.workspace = true
 repository.workspace = true
 
 [dependencies]
-uuid = { version = "1", features = ["serde", "v1", "v4", "v5"] }
+uuid = { workspace = true }
 chrono = { version = "0.4.21", features = ["serde"] }
 
 jsonwebtoken = {version = "8.1", optional = true }
