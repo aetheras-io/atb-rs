@@ -1,12 +1,12 @@
 [package]
 name = "atb-types"
-version = "0.14.5"
-authors = ["Denis Tsai <denistsai@aetheras.io>"]
-edition = "2021"
+version.workspace = true 
+authors.workspace = true 
+edition.workspace = true 
+repository.workspace = true
 
 [dependencies]
-# #NOTE 1.0.0 is out with features we need, should update when other deps use it
-uuid = { version = "0.8", features = ["serde", "v1", "v4", "v5"] }
+uuid = { version = "1", features = ["serde", "v1", "v4", "v5"] }
 chrono = { version = "0.4.21", features = ["serde"] }
 
 jsonwebtoken = {version = "8.1", optional = true }

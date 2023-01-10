@@ -9,7 +9,7 @@ repository.workspace = true
 once_cell = { workspace = true } 
 jsonwebtoken = { workspace = true, optional = true }
 
-uuid = { version = "0.8", features = ["serde", "v1", "v4", "v5"] }
+uuid = { version = "1", features = ["serde", "v1", "v4", "v5"] }
 fake = { version = "2.5", features = ["derive"] }
 
 [features]
