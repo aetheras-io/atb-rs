@@ -7,7 +7,7 @@ repository.workspace = true
 
 [dependencies]
 uuid = { workspace = true }
-chrono = { version = "0.4.21", features = ["serde"] }
+chrono = { workspace = true }
 
 jsonwebtoken = {version = "8.1", optional = true }
 lazy_static = { version = "1.4", optional = true }
