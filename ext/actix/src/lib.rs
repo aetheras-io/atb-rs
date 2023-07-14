@@ -51,9 +51,9 @@ impl<T: Clone + Send + Sync + 'static> FromRequest for SafeData<T> {
     }
 }
 
-#[cfg(feature = "jwt")]
+// #[cfg(feature = "jwt")]
 pub mod jwt {
-    use atb_types::jwt::{Claims as ClaimsInner, Decoder};
+    use atb_types::jwt::{Claims as ClaimsInner, Decoder, Error as JwtError, FINGERPRINT_COOKIE};
 
     use std::rc::Rc;
 
@@ -99,8 +99,8 @@ pub mod jwt {
         #[error("missing authorization payload")]
         MissingAuthPayload,
 
-        #[error("claims failed verification or decoding")]
-        Failed,
+        #[error("decode: {0}")]
+        Decode(#[from] JwtError),
 
         #[error("{0}")]
         Message(&'static str),
@@ -114,6 +114,26 @@ pub mod jwt {
     }
 
     impl<'a, EF, VF> JwtAuth<'a, EF, VF> {
+        /// fn issue_jwt<'a>(fqdn: &'a str) -> (ClaimsInner, Cookie<'a>) {
+        ///     use atb_types::jwt::Builder;
+        ///     use atb_types::Duration;
+        ///
+        ///     let duration = Duration::hours(8);
+        ///     let (claims, fingerprint) = Builder::new("eg", duration)
+        ///         .subject("someone")
+        ///         .audience(vec!["aud".to_owned()])
+        ///         .build_fingerprinted();
+        ///
+        ///     let cookie = fingerprint_cookie(fqdn, fingerprint, claims.expiry()).unwrap();
+        ///
+        ///     (claims, cookie)
+        /// }
+        ///
+        /// fn validate(req: &ServiceRequest, claims: &Claims) {
+        ///     validate_expiry(claims);
+        ///     let fp = extract_fingerprint(req);
+        ///     claims.verify_fingerprint(fp);
+        /// }
         pub fn new(extractor: EF, validator: VF, decoder: Decoder<'a>) -> Self {
             let inner = Rc::new(JwtAuthInner {
                 extractor,
@@ -134,10 +154,9 @@ pub mod jwt {
     impl<'a, EF, VF, S> Transform<S, ServiceRequest> for JwtAuth<'a, EF, VF>
     where
         EF: Fn(&ServiceRequest) -> Result<String>,
-        VF: Fn(&ClaimsInner) -> bool,
+        VF: Fn(&ServiceRequest, &ClaimsInner) -> bool,
         S: Service<ServiceRequest, Response = ServiceResponse<BoxBody>, Error = ActixError>,
         S::Future: 'static,
-        // B: 'static,
     {
         type Response = ServiceResponse<BoxBody>;
         type Error = ActixError;
@@ -157,7 +176,7 @@ pub mod jwt {
     pub struct JwtAuthMiddleware<'a, EF, VF, S>
     where
         EF: Fn(&ServiceRequest) -> Result<String>,
-        VF: Fn(&ClaimsInner) -> bool,
+        VF: Fn(&ServiceRequest, &ClaimsInner) -> bool,
     {
         service: S,
         inner: Rc<JwtAuthInner<'a, EF, VF>>,
@@ -166,31 +185,30 @@ pub mod jwt {
     impl<'a, EF, VF, S> Service<ServiceRequest> for JwtAuthMiddleware<'a, EF, VF, S>
     where
         EF: Fn(&ServiceRequest) -> Result<String>,
-        VF: Fn(&ClaimsInner) -> bool,
+        VF: Fn(&ServiceRequest, &ClaimsInner) -> bool,
         S: Service<ServiceRequest, Response = ServiceResponse<BoxBody>, Error = ActixError>,
         S::Future: 'static,
-        // B: 'static,
     {
         type Response = ServiceResponse<BoxBody>;
         type Error = ActixError;
-        // type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
-        // type Future = Ready<Result<Self::Response, Self::Error>>;
         type Future = Either<Ready<Result<ServiceResponse<BoxBody>, ActixError>>, S::Future>;
 
-        actix_service::forward_ready!(service);
+        actix_web::dev::forward_ready!(service);
 
         fn call(&self, req: ServiceRequest) -> Self::Future {
             let suit = &self.inner;
 
             match (suit.extractor)(&req).and_then(|jwt| {
                 log::debug!("extracted jwt: {}", jwt);
-                ClaimsInner::decode(&jwt, suit.decoder, &suit.validator)
-                    .map(Claims)
-                    .ok_or(Error::Failed)
+                ClaimsInner::decode(&jwt, suit.decoder).map_err(Into::into)
             }) {
-                Ok(claims) => {
-                    req.extensions_mut().insert(claims);
-                    Either::Right(self.service.call(req))
+                Ok(inner) => {
+                    if (suit.validator)(&req, &inner) {
+                        req.extensions_mut().insert(Claims(inner));
+                        Either::Right(self.service.call(req))
+                    } else {
+                        Either::Left(future::ok(req.error_response(ErrorUnauthorized(""))))
+                    }
                 }
                 Err(e) => {
                     log::debug!("jwt auth middleware error: {}", e);
@@ -280,172 +298,24 @@ pub mod jwt {
 
         Some((claim_part, sig_part))
     }
-}
 
-///#HACK juniper actix isn't updated for beta channel actix for Tokio 1.0
-/// https://github.com/aetheras-io/atb-rs/issues/1
-#[cfg(feature = "graphql-juniper")]
-pub mod juniper_actix {
-    use actix_web::{
-        error::{ErrorBadRequest, ErrorMethodNotAllowed, ErrorUnsupportedMediaType},
-        http::{header::CONTENT_TYPE, Method},
-        web, Error, FromRequest, HttpRequest, HttpResponse,
-    };
-    use juniper::{
-        http::{
-            graphiql::graphiql_source, playground::playground_source, GraphQLBatchRequest,
-            GraphQLRequest,
-        },
-        ScalarValue,
-    };
-    use serde::Deserialize;
-
-    #[derive(Deserialize, Clone, PartialEq, Debug)]
-    #[serde(deny_unknown_fields)]
-    struct GetGraphQLRequest {
-        query: String,
-        #[serde(rename = "operationName")]
-        operation_name: Option<String>,
-        variables: Option<String>,
+    pub fn extract_fingerprint(req: &ServiceRequest) -> Option<Cookie<'static>> {
+        req.cookie(FINGERPRINT_COOKIE)
     }
 
-    impl<S> From<GetGraphQLRequest> for GraphQLRequest<S>
-    where
-        S: ScalarValue,
-    {
-        fn from(get_req: GetGraphQLRequest) -> Self {
-            let GetGraphQLRequest {
-                query,
-                operation_name,
-                variables,
-            } = get_req;
-            let variables = match variables {
-                Some(variables) => Some(serde_json::from_str(&variables).unwrap()),
-                None => None,
-            };
-            Self::new(query, operation_name, variables)
-        }
-    }
-
-    /// Actix Web GraphQL Handler for GET and POST requests
-    pub async fn graphql_handler<Query, Mutation, Subscription, CtxT, S>(
-        schema: &juniper::RootNode<'static, Query, Mutation, Subscription, S>,
-        context: &CtxT,
-        req: HttpRequest,
-        payload: actix_web::web::Payload,
-    ) -> Result<HttpResponse, Error>
-    where
-        Query: juniper::GraphQLTypeAsync<S, Context = CtxT>,
-        Query::TypeInfo: Sync,
-        Mutation: juniper::GraphQLTypeAsync<S, Context = CtxT>,
-        Mutation::TypeInfo: Sync,
-        Subscription: juniper::GraphQLSubscriptionType<S, Context = CtxT>,
-        Subscription::TypeInfo: Sync,
-        CtxT: Sync,
-        S: ScalarValue + Send + Sync,
-    {
-        match *req.method() {
-            Method::POST => post_graphql_handler(schema, context, req, payload).await,
-            Method::GET => get_graphql_handler(schema, context, req).await,
-            _ => Err(ErrorMethodNotAllowed(
-                "GraphQL requests can only be sent with GET or POST",
-            )),
-        }
-    }
-    /// Actix GraphQL Handler for GET requests
-    pub async fn get_graphql_handler<Query, Mutation, Subscription, CtxT, S>(
-        schema: &juniper::RootNode<'static, Query, Mutation, Subscription, S>,
-        context: &CtxT,
-        req: HttpRequest,
-    ) -> Result<HttpResponse, Error>
-    where
-        Query: juniper::GraphQLTypeAsync<S, Context = CtxT>,
-        Query::TypeInfo: Sync,
-        Mutation: juniper::GraphQLTypeAsync<S, Context = CtxT>,
-        Mutation::TypeInfo: Sync,
-        Subscription: juniper::GraphQLSubscriptionType<S, Context = CtxT>,
-        Subscription::TypeInfo: Sync,
-        CtxT: Sync,
-        S: ScalarValue + Send + Sync,
-    {
-        let get_req = web::Query::<GetGraphQLRequest>::from_query(req.query_string())?;
-        let req = GraphQLRequest::from(get_req.into_inner());
-        let gql_response = req.execute(schema, context).await;
-        let body_response = serde_json::to_string(&gql_response)?;
-        let mut response = match gql_response.is_ok() {
-            true => HttpResponse::Ok(),
-            false => HttpResponse::BadRequest(),
-        };
-        Ok(response
-            .content_type("application/json")
-            .body(body_response))
-    }
-
-    /// Actix GraphQL Handler for POST requests
-    pub async fn post_graphql_handler<Query, Mutation, Subscription, CtxT, S>(
-        schema: &juniper::RootNode<'static, Query, Mutation, Subscription, S>,
-        context: &CtxT,
-        req: HttpRequest,
-        payload: actix_web::web::Payload,
-    ) -> Result<HttpResponse, Error>
-    where
-        Query: juniper::GraphQLTypeAsync<S, Context = CtxT>,
-        Query::TypeInfo: Sync,
-        Mutation: juniper::GraphQLTypeAsync<S, Context = CtxT>,
-        Mutation::TypeInfo: Sync,
-        Subscription: juniper::GraphQLSubscriptionType<S, Context = CtxT>,
-        Subscription::TypeInfo: Sync,
-        CtxT: Sync,
-        S: ScalarValue + Send + Sync,
-    {
-        let content_type_header = req
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|hv| hv.to_str().ok());
-        let req = match content_type_header {
-            Some("application/json") => {
-                let body = String::from_request(&req, &mut payload.into_inner()).await?;
-                serde_json::from_str::<GraphQLBatchRequest<S>>(&body).map_err(ErrorBadRequest)
-            }
-            Some("application/graphql") => {
-                let body = String::from_request(&req, &mut payload.into_inner()).await?;
-                Ok(GraphQLBatchRequest::Single(GraphQLRequest::new(
-                    body, None, None,
-                )))
-            }
-            _ => Err(ErrorUnsupportedMediaType(
-                "GraphQL requests should have content type `application/json` or `application/graphql`",
-            )),
-        }?;
-        let gql_batch_response = req.execute(schema, context).await;
-        let gql_response = serde_json::to_string(&gql_batch_response)?;
-        let mut response = match gql_batch_response.is_ok() {
-            true => HttpResponse::Ok(),
-            false => HttpResponse::BadRequest(),
-        };
-        Ok(response.content_type("application/json").body(gql_response))
-    }
-
-    /// Create a handler that replies with an HTML page containing GraphiQL. This does not handle routing, so you can mount it on any endpoint
-    #[allow(dead_code)]
-    pub async fn graphiql_handler(
-        graphql_endpoint_url: &str,
-        subscriptions_endpoint_url: Option<&'static str>,
-    ) -> Result<HttpResponse, Error> {
-        let html = graphiql_source(graphql_endpoint_url, subscriptions_endpoint_url);
-        Ok(HttpResponse::Ok()
-            .content_type("text/html; charset=utf-8")
-            .body(html))
-    }
-
-    /// Create a handler that replies with an HTML page containing GraphQL Playground. This does not handle routing, so you cant mount it on any endpoint.
-    pub async fn playground_handler(
-        graphql_endpoint_url: &str,
-        subscriptions_endpoint_url: Option<&'static str>,
-    ) -> Result<HttpResponse, Error> {
-        let html = playground_source(graphql_endpoint_url, subscriptions_endpoint_url);
-        Ok(HttpResponse::Ok()
-            .content_type("text/html; charset=utf-8")
-            .body(html))
+    pub fn fingerprint_cookie<'a>(
+        fqdn: &'a str,
+        encoded_fingerprint: String,
+        expiry: i64,
+    ) -> Result<Cookie<'a>> {
+        let expiry = OffsetDateTime::from_unix_timestamp(expiry)
+            .map_err(|_| Error::Message("invalid expiry i64 value"))?;
+        Ok(Cookie::build(FINGERPRINT_COOKIE, encoded_fingerprint)
+            .domain(fqdn)
+            .path("/")
+            .secure(true)
+            .http_only(true)
+            .expires(Some(expiry))
+            .finish())
     }
 }

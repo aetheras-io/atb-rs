@@ -20,7 +20,6 @@ build:
 	(cd ext/tokio && cargo build)
 	(cd ext/actix && cargo build --features all)
 	(cd ext/serde && cargo build)
-	(cd graphql && cargo build)
 	(cd utils/cli && cargo build)
 	(cd utils/fixtures && cargo build)
 	(cd utils/fixtures && cargo build --features jwt)

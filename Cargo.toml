@@ -1,7 +1,7 @@
 [workspace.package]
 description = "A Tool Box"
 authors = ["Denis Tsai <denistsai@aetheras.io"]
-version = "0.15.4"
+version = "0.20.0"
 edition = "2021"
 repository = "https://github.com/aetheras-io/eliz-gold"
 
@@ -11,8 +11,7 @@ members = [
    "ext/actix",
    "ext/tokio",
    "ext/serde",
-   "ext/sqlx",
-   "graphql",
+   # "ext/sqlx",
    "utils/build",
    "utils/cli",
    "utils/fixtures",

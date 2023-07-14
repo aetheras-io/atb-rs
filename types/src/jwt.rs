@@ -2,11 +2,15 @@ use crate::{DateTime, Duration, Utc, Uuid};
 
 use std::fmt::Display;
 
+use base64::prelude::*;
 use jsonwebtoken::{self as jwt, crypto, errors::Error as JwtError, Algorithm};
 use lazy_static::lazy_static;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 pub use jsonwebtoken::{DecodingKey, EncodingKey, Header};
+
+pub const FINGERPRINT_COOKIE: &str = "__Atb-Secure-Fpt";
 
 lazy_static! {
     pub static ref HEADER_RS256: Header = Header::new(Algorithm::RS256);
@@ -16,20 +20,41 @@ lazy_static! {
 pub type Signer<'a> = (&'a Header, &'a EncodingKey);
 pub type Decoder<'a> = (&'a Header, &'a DecodingKey);
 
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("invalid jwt token structure")]
+    InvalidToken,
+
+    #[error("mismatched jwt algorithm header")]
+    Algorithm,
+
+    #[error("base64: {0}")]
+    Base64Decode(#[from] base64::DecodeError),
+
+    #[error("serde json : {0}")]
+    SerdeJson(#[from] serde_json::Error),
+
+    #[error("jwt crypto: {0}")]
+    Crypto(#[from] JwtError),
+}
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;
+
 /// Takes the result of a rsplit and ensure we only get 2 parts
 /// this is taken from the jsonwebtoken crate for quick implementation.  
 /// I think this is a totally unecessary "lispy" way of splitting
-macro_rules! expect_two {
+macro_rules! split_two {
     ($iter:expr) => {{
         let mut i = $iter;
         match (i.next(), i.next(), i.next()) {
             (Some(first), Some(second), None) => (first, second),
-            _ => return None,
+            _ => return Err(Error::InvalidToken),
         }
     }};
 }
 
 pub struct Builder(Claims);
+
 impl Builder {
     pub fn new<S: AsRef<str>>(issuer: S, expiry_duration: Duration) -> Self {
         let iat = Utc::now();
@@ -65,6 +90,7 @@ impl Builder {
             || value.get("exp").is_some()
             || value.get("nbf").is_some()
             || value.get("aud").is_some()
+            || value.get("fpt").is_some()
         {
             self
         } else {
@@ -75,6 +101,15 @@ impl Builder {
 
     pub fn build(self) -> Claims {
         self.0
+    }
+
+    pub fn build_fingerprinted(mut self) -> (Claims, String) {
+        let entropy = vec![0, 1];
+        let mut hasher = Sha256::new();
+        hasher.update(&entropy);
+        self.0.fpt = Some(BASE64_STANDARD.encode(hasher.finalize()));
+
+        (self.0, BASE64_STANDARD.encode(entropy))
     }
 }
 
@@ -98,6 +133,9 @@ pub struct Claims {
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     aud: Vec<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fpt: Option<String>,
 
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     custom: Option<serde_json::Value>,
@@ -141,8 +179,26 @@ impl Claims {
         &self.aud
     }
 
+    pub fn fingerprint(&self) -> Option<&str> {
+        self.fpt.as_deref()
+    }
+
     pub fn custom(&self) -> Option<&serde_json::Value> {
         self.custom.as_ref()
+    }
+
+    pub fn verify_fingerprint(&self, encoded: &str) -> bool {
+        let Some(ref hash) = self.fpt else {
+            return false;
+        };
+
+        let Ok(entropy) = BASE64_STANDARD.decode(encoded) else {
+            return false;
+        };
+
+        let mut hasher = Sha256::new();
+        hasher.update(entropy);
+        &BASE64_STANDARD.encode(hasher.finalize()) == hash
     }
 
     pub fn deserialize_custom<T: DeserializeOwned>(&self) -> Option<T> {
@@ -157,33 +213,28 @@ impl Claims {
 
     // #TODO might be beneficial to get the error reason for debugging.
     // right now we will keep the same optional interface to get things going quickly
-    pub fn decode(
-        token: &str,
-        decoder: Decoder,
-        validator: impl Fn(&Claims) -> bool,
-    ) -> Option<Claims> {
-        let (signature, message) = expect_two!(token.rsplitn(2, '.'));
-        let (claims, header) = expect_two!(message.rsplitn(2, '.'));
+    pub fn decode(token: &str, decoder: Decoder) -> Result<Claims> {
+        let (signature, message) = split_two!(token.rsplitn(2, '.'));
+        let (claims, header) = split_two!(message.rsplitn(2, '.'));
         let header: Header = b64_decode_json(&header)?;
 
         if decoder.0.alg != header.alg
-            || !crypto::verify(signature, message.as_bytes(), decoder.1, header.alg).ok()?
+            || !crypto::verify(signature, message.as_bytes(), decoder.1, header.alg)?
         {
-            None
+            Err(Error::Algorithm)
         } else {
-            b64_decode_json(&claims).and_then(|c| if validator(&c) { Some(c) } else { None })
+            b64_decode_json(&claims)
         }
     }
 }
 
 /// base64 decode into a string and then deserialize as json
-fn b64_decode_json<T: DeserializeOwned>(input: &str) -> Option<T> {
-    base64::decode_config(input, base64::URL_SAFE_NO_PAD)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<T>(&b).ok())
+fn b64_decode_json<T: DeserializeOwned>(input: &str) -> Result<T> {
+    let bytes = BASE64_URL_SAFE.decode(input)?;
+    serde_json::from_slice::<T>(&bytes).map_err(Into::into)
 }
 
-pub fn simple_validate(claims: &Claims) -> bool {
+pub fn validate_expiry(claims: &Claims) -> bool {
     const LEEWAY: i64 = 0;
     let now = Utc::now().timestamp();
     claims.exp > now - LEEWAY
