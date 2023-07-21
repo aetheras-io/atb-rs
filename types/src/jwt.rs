@@ -207,8 +207,8 @@ impl Claims {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
 
-    pub fn encode(&self, signer: Signer) -> Result<String, JwtError> {
-        jwt::encode(signer.0, self, signer.1)
+    pub fn encode(&self, signer: Signer) -> Result<String, Error> {
+        jwt::encode(signer.0, self, signer.1).map_err(Into::into)
     }
 
     // #TODO might be beneficial to get the error reason for debugging.
