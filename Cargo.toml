@@ -1,7 +1,7 @@
 [workspace.package]
 description = "A Tool Box"
 authors = ["Denis Tsai <denistsai@aetheras.io"]
-version = "0.20.2"
+version = "0.20.3"
 edition = "2021"
 repository = "https://github.com/aetheras-io/atb-rs"
 
@@ -29,6 +29,7 @@ serde = { version = "1", features = ["derive"] }
 jsonwebtoken = { version = "8.2" }
 uuid = { version = "1", features = ["serde", "v1", "v4", "v5"] }
 chrono = { version = "0.4.21", features = ["serde"] }
+rand = "0.8.5"
 
 # We will generally lock on MINOR versions to allow for some patch wiggle room at the library 
 # importer, in case some small bug fix happens in the patches
@@ -50,8 +51,8 @@ anyhow = { workspace = true }
 futures = { workspace = true } 
 once_cell = { workspace = true }
 chrono = { workspace = true }
+rand = { workspace = true }
 
-rand = "0.8.5"
 
 # Eventsourcing
 lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.14.0", optional = true }

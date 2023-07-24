@@ -104,7 +104,11 @@ impl Builder {
     }
 
     pub fn build_fingerprinted(mut self) -> (Claims, String) {
-        let entropy = vec![0, 1];
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let mut entropy = [0u8; 32];
+        rng.fill(&mut entropy[..]);
+
         let mut hasher = Sha256::new();
         hasher.update(&entropy);
         self.0.fpt = Some(BASE64_STANDARD.encode(hasher.finalize()));
@@ -230,7 +234,7 @@ impl Claims {
 
 /// base64 decode into a string and then deserialize as json
 fn b64_decode_json<T: DeserializeOwned>(input: &str) -> Result<T> {
-    let bytes = BASE64_URL_SAFE.decode(input)?;
+    let bytes = BASE64_URL_SAFE_NO_PAD.decode(input)?;
     serde_json::from_slice::<T>(&bytes).map_err(Into::into)
 }
 

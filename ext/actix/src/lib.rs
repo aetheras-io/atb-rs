@@ -51,7 +51,7 @@ impl<T: Clone + Send + Sync + 'static> FromRequest for SafeData<T> {
     }
 }
 
-// #[cfg(feature = "jwt")]
+#[cfg(feature = "jwt")]
 pub mod jwt {
     use atb_types::jwt::{Claims as ClaimsInner, Decoder, Error as JwtError, FINGERPRINT_COOKIE};
 

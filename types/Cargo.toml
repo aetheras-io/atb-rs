@@ -9,8 +9,9 @@ repository.workspace = true
 thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-sha2 = { version = "0.10", default-features = false }
+rand = { workspace = true }
 
+sha2 = { version = "0.10", default-features = false }
 jsonwebtoken = {version = "8.1", optional = true }
 lazy_static = { version = "1.4", optional = true }
 base64 = { version = "0.21", optional = true } 
