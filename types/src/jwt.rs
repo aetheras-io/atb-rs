@@ -159,12 +159,18 @@ fn is_zero(num: &i64) -> bool {
     *num == 0
 }
 
+impl Claims<NoCustom> {
+    pub fn decode(token: &str, header: &Header, decoding_key: &DecodingKey) -> Result<Self> {
+        decode(token, header, decoding_key)
+    }
+}
+
 /// Claims implementation
 /// #NOTE As the JWT spec (https://tools.ietf.org/html/rfc7519#section-4.1.4) mentioned, the iat and exp fields
 /// are of NumericDate type, which is a timestamp in second.
 impl<T> Claims<T>
 where
-    T: Default + Serialize + DeserializeOwned,
+    T: Serialize + DeserializeOwned,
 {
     pub fn issuer(&self) -> &str {
         &self.iss
@@ -220,20 +226,31 @@ where
         jwt::encode(header, self, encoding_key).map_err(Into::into)
     }
 
-    // #TODO might be beneficial to get the error reason for debugging.
-    // right now we will keep the same optional interface to get things going quickly
-    pub fn decode(token: &str, header: &Header, decoding_key: &DecodingKey) -> Result<Claims<T>> {
-        let (signature, message) = split_two(token.rsplitn(2, '.'))?;
-        let (claims, header_part) = split_two(message.rsplitn(2, '.'))?;
-        let claims_header: Header = b64_decode_json(header_part)?;
+    pub fn decode_custom(
+        token: &str,
+        header: &Header,
+        decoding_key: &DecodingKey,
+    ) -> Result<Claims<T>> {
+        decode(token, header, decoding_key)
+    }
+}
 
-        if claims_header.alg != header.alg
-            || !crypto::verify(signature, message.as_bytes(), decoding_key, header.alg)?
-        {
-            Err(Error::Algorithm)
-        } else {
-            b64_decode_json(claims)
-        }
+// #TODO might be beneficial to get the error reason for debugging.
+// right now we will keep the same optional interface to get things going quickly
+pub fn decode<T>(token: &str, header: &Header, decoding_key: &DecodingKey) -> Result<Claims<T>>
+where
+    T: DeserializeOwned,
+{
+    let (signature, message) = split_two(token.rsplitn(2, '.'))?;
+    let (claims, header_part) = split_two(message.rsplitn(2, '.'))?;
+    let claims_header: Header = b64_decode_json(header_part)?;
+
+    if claims_header.alg != header.alg
+        || !crypto::verify(signature, message.as_bytes(), decoding_key, header.alg)?
+    {
+        Err(Error::Algorithm)
+    } else {
+        b64_decode_json(claims)
     }
 }
 
