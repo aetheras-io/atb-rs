@@ -1,9 +1,6 @@
 #[cfg(feature = "jwt")]
 pub mod jwt;
 
-#[cfg(feature = "fixtures")]
-pub mod fixtures;
-
 pub mod prelude {
     pub use chrono;
     pub use uuid;
@@ -49,7 +46,7 @@ impl<T> std::ops::Deref for Take<T> {
 
 impl<T> std::ops::DerefMut for Take<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        match (*self).0 {
+        match self.0 {
             Some(ref mut t) => t,
             None => panic!("value is already taken"),
         }

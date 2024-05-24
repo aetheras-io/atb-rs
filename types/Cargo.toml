@@ -10,11 +10,11 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 rand = { workspace = true }
+once_cell = { workspace = true }
+jsonwebtoken = { workspace = true, optional = true }
 
 sha2 = { version = "0.10", default-features = false }
-jsonwebtoken = {version = "8.1", optional = true }
-lazy_static = { version = "1.4", optional = true }
-base64 = { version = "0.21", optional = true } 
+base64 = { version = "0.22", optional = true } 
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true } 
 
@@ -23,7 +23,6 @@ default = []
 all = ["jwt"]
 jwt = [
   "jsonwebtoken",
-  "lazy_static",
   "base64",
   "serde",
   "serde_json",

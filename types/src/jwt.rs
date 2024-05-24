@@ -3,22 +3,19 @@ use crate::{DateTime, Duration, Utc, Uuid};
 use std::fmt::Display;
 
 use base64::prelude::*;
-use jsonwebtoken::{self as jwt, crypto, errors::Error as JwtError, Algorithm};
-use lazy_static::lazy_static;
+use jsonwebtoken::{
+    self as jwt, crypto, errors::Error as JwtError, Algorithm, DecodingKey, EncodingKey, Header,
+};
+use once_cell::sync::Lazy;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub use jsonwebtoken::{DecodingKey, EncodingKey, Header};
+pub use jsonwebtoken;
 
 pub const FINGERPRINT_COOKIE: &str = "__Atb-Secure-Fpt";
 
-lazy_static! {
-    pub static ref HEADER_RS256: Header = Header::new(Algorithm::RS256);
-    pub static ref HEADER_HS256: Header = Header::new(Algorithm::HS256);
-}
-
-pub type Signer<'a> = (&'a Header, &'a EncodingKey);
-pub type Decoder<'a> = (&'a Header, &'a DecodingKey);
+pub static HEADER_RS256: Lazy<Header> = Lazy::new(|| Header::new(Algorithm::RS256));
+pub static HEADER_HS256: Lazy<Header> = Lazy::new(|| Header::new(Algorithm::HS256));
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -40,28 +37,49 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// Takes the result of a rsplit and ensure we only get 2 parts
-/// this is taken from the jsonwebtoken crate for quick implementation.  
-/// I think this is a totally unecessary "lispy" way of splitting
-macro_rules! split_two {
-    ($iter:expr) => {{
-        let mut i = $iter;
-        match (i.next(), i.next(), i.next()) {
-            (Some(first), Some(second), None) => (first, second),
-            _ => return Err(Error::InvalidToken),
-        }
-    }};
-}
+pub struct Builder<T>(Claims<T>);
 
-pub struct Builder(Claims);
-
-impl Builder {
+impl Builder<NoCustom> {
     pub fn new<S: AsRef<str>>(issuer: S, expiry_duration: Duration) -> Self {
         let iat = Utc::now();
         Builder(Claims {
             iss: issuer.as_ref().to_owned(),
             iat: iat.timestamp(),
             exp: (iat + expiry_duration).timestamp(),
+            ..Default::default()
+        })
+    }
+}
+
+impl<T> Builder<T> {
+    /// #WARNING make sure custom fields do not clash with the default claims fields
+    /// checks for this will only happen in debug mode.
+    pub fn with_custom<S: AsRef<str>>(issuer: S, expiry_duration: Duration, custom: T) -> Builder<T>
+    where
+        T: Serialize + Default,
+    {
+        #[cfg(debug_assertions)]
+        {
+            let value =
+                serde_json::to_value(&custom).expect("custom claims data should serialize. qed");
+            if value.get("iss").is_some()
+                || value.get("sub").is_some()
+                || value.get("iat").is_some()
+                || value.get("exp").is_some()
+                || value.get("nbf").is_some()
+                || value.get("aud").is_some()
+                || value.get("fpt").is_some()
+            {
+                panic!("duplicate field found in custom claims");
+            }
+        }
+
+        let iat = Utc::now();
+        Builder(Claims {
+            iss: issuer.as_ref().to_owned(),
+            iat: iat.timestamp(),
+            exp: (iat + expiry_duration).timestamp(),
+            custom: Some(custom),
             ..Default::default()
         })
     }
@@ -81,45 +99,35 @@ impl Builder {
         self
     }
 
-    /// add custom serialization values on top of the default
-    pub fn custom<T: Serialize>(mut self, data: T) -> Self {
-        let value = serde_json::to_value(data).expect("custom claims data should serialize. qed");
-        if value.get("iss").is_some()
-            || value.get("sub").is_some()
-            || value.get("iat").is_some()
-            || value.get("exp").is_some()
-            || value.get("nbf").is_some()
-            || value.get("aud").is_some()
-            || value.get("fpt").is_some()
-        {
-            self
-        } else {
-            self.0.custom = Some(value);
-            self
-        }
-    }
+    // pub fn custom(mut self, fields: T) -> Self {
+    //     self.0.custom = Some(fields);
+    //     self
+    // }
 
-    pub fn build(self) -> Claims {
+    pub fn build(self) -> Claims<T> {
         self.0
     }
 
-    pub fn build_fingerprinted(mut self) -> (Claims, String) {
+    pub fn build_fingerprinted(mut self) -> (Claims<T>, String) {
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let mut entropy = [0u8; 32];
         rng.fill(&mut entropy[..]);
 
         let mut hasher = Sha256::new();
-        hasher.update(&entropy);
+        hasher.update(entropy);
         self.0.fpt = Some(BASE64_STANDARD.encode(hasher.finalize()));
 
         (self.0, BASE64_STANDARD.encode(entropy))
     }
 }
 
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct NoCustom;
+
 /// #TODO make a custom error type for JWTs and Claims
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
-pub struct Claims {
+pub struct Claims<T = NoCustom> {
     #[serde(default)]
     iss: String,
 
@@ -142,7 +150,7 @@ pub struct Claims {
     fpt: Option<String>,
 
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    custom: Option<serde_json::Value>,
+    custom: Option<T>,
 }
 
 /// This is only used for serde ```skip_serialize_if```
@@ -154,7 +162,10 @@ fn is_zero(num: &i64) -> bool {
 /// Claims implementation
 /// #NOTE As the JWT spec (https://tools.ietf.org/html/rfc7519#section-4.1.4) mentioned, the iat and exp fields
 /// are of NumericDate type, which is a timestamp in second.
-impl Claims {
+impl<T> Claims<T>
+where
+    T: Default + Serialize + DeserializeOwned,
+{
     pub fn issuer(&self) -> &str {
         &self.iss
     }
@@ -187,7 +198,7 @@ impl Claims {
         self.fpt.as_deref()
     }
 
-    pub fn custom(&self) -> Option<&serde_json::Value> {
+    pub fn custom(&self) -> Option<&T> {
         self.custom.as_ref()
     }
 
@@ -205,29 +216,23 @@ impl Claims {
         &BASE64_STANDARD.encode(hasher.finalize()) == hash
     }
 
-    pub fn deserialize_custom<T: DeserializeOwned>(&self) -> Option<T> {
-        self.custom
-            .as_ref()
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-    }
-
-    pub fn encode(&self, signer: Signer) -> Result<String, Error> {
-        jwt::encode(signer.0, self, signer.1).map_err(Into::into)
+    pub fn encode(&self, header: &Header, encoding_key: &EncodingKey) -> Result<String, Error> {
+        jwt::encode(header, self, encoding_key).map_err(Into::into)
     }
 
     // #TODO might be beneficial to get the error reason for debugging.
     // right now we will keep the same optional interface to get things going quickly
-    pub fn decode(token: &str, decoder: Decoder) -> Result<Claims> {
-        let (signature, message) = split_two!(token.rsplitn(2, '.'));
-        let (claims, header) = split_two!(message.rsplitn(2, '.'));
-        let header: Header = b64_decode_json(&header)?;
+    pub fn decode(token: &str, header: &Header, decoding_key: &DecodingKey) -> Result<Claims<T>> {
+        let (signature, message) = split_two(token.rsplitn(2, '.'))?;
+        let (claims, header_part) = split_two(message.rsplitn(2, '.'))?;
+        let claims_header: Header = b64_decode_json(header_part)?;
 
-        if decoder.0.alg != header.alg
-            || !crypto::verify(signature, message.as_bytes(), decoder.1, header.alg)?
+        if claims_header.alg != header.alg
+            || !crypto::verify(signature, message.as_bytes(), decoding_key, header.alg)?
         {
             Err(Error::Algorithm)
         } else {
-            b64_decode_json(&claims)
+            b64_decode_json(claims)
         }
     }
 }
@@ -244,13 +249,24 @@ pub fn validate_expiry(claims: &Claims) -> bool {
     claims.exp > now - LEEWAY
 }
 
+fn split_two<T, I>(mut iter: I) -> Result<(T, T), Error>
+where
+    I: Iterator<Item = T>,
+{
+    match (iter.next(), iter.next(), iter.next()) {
+        (Some(first), Some(second), None) => Ok((first, second)),
+        _ => Err(Error::InvalidToken),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    #[should_panic]
     fn it_handles_clashing_custom_fields() {
-        #[derive(PartialEq, Debug, Serialize, Deserialize)]
+        #[derive(PartialEq, Debug, Serialize, Deserialize, Default)]
         struct Custom {
             iss: String,
         }
@@ -258,16 +274,25 @@ mod tests {
             iss: "notdenis".to_owned(),
         };
 
-        let claims = Builder::new("denis", Duration::days(1))
+        let _claims = Builder::with_custom("denis", Duration::days(1), custom)
             .subject(Uuid::new_v4())
-            .custom(custom)
             .build();
-        assert!(claims.custom().is_none());
+    }
+
+    #[test]
+    fn it_can_default_ergonomically() {
+        let claims = Builder::new("denis", Duration::days(1))
+            .subject(Uuid::new_v4().to_string())
+            .build();
+        let claims_ser = serde_json::to_string(&claims).unwrap();
+        let claims_de: Claims = serde_json::from_str(&claims_ser).unwrap();
+
+        assert_eq!(claims, claims_de);
     }
 
     #[test]
     fn it_handles_custom_fields() {
-        #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
+        #[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Default)]
         struct Custom {
             hello: String,
         }
@@ -275,12 +300,15 @@ mod tests {
             hello: "world".to_owned(),
         };
 
-        let claims = Builder::new("denis", Duration::days(1))
+        let claims = Builder::with_custom("denis", Duration::days(1), custom)
             .subject(Uuid::new_v4().to_string())
-            .custom(custom.clone())
             .build();
 
-        let custom_de: Custom = claims.deserialize_custom().unwrap();
-        assert_eq!(custom, custom_de);
+        let claims_ser = serde_json::to_string(&claims).unwrap();
+        let claims_de: Claims<Custom> = serde_json::from_str(&claims_ser).unwrap();
+        assert_eq!(claims, claims_de);
+
+        let claims_no_custom_from_custom_claim: Claims = serde_json::from_str(&claims_ser).unwrap();
+        assert!(claims_no_custom_from_custom_claim.custom().is_none());
     }
 }

@@ -167,6 +167,12 @@ impl TaskService {
     }
 }
 
+impl Default for TaskService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub async fn retry_future<Factory, Fut, F, O, E>(f: Factory, retryable: F, max_attempts: u64) -> O
 where
     Factory: Fn() -> Fut,

@@ -13,4 +13,4 @@ anyhow = { workspace = true }
 futures = { workspace = true } 
 
 tokio = { version = "1", features = ["signal", "rt-multi-thread", "net", "time", "macros", "sync"] }
-async-trait = "0.1.53"
+async-trait = "0.1"

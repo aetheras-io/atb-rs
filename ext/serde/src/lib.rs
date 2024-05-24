@@ -61,6 +61,6 @@ pub mod bytes_as_base64 {
     where
         D: Deserializer<'de>,
     {
-        String::deserialize(de).and_then(|s| base64::decode(&s).map_err(serde::de::Error::custom))
+        String::deserialize(de).and_then(|s| base64::decode(s).map_err(serde::de::Error::custom))
     }
 }
