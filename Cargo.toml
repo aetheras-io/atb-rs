@@ -1,7 +1,7 @@
 [workspace.package]
 description = "A Tool Box"
 authors = ["Denis Tsai <denistsai@aetheras.io"]
-version = "0.20.3"
+version = "1.0.0"
 edition = "2021"
 repository = "https://github.com/aetheras-io/atb-rs"
 
