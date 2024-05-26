@@ -99,11 +99,6 @@ impl<T> Builder<T> {
         self
     }
 
-    // pub fn custom(mut self, fields: T) -> Self {
-    //     self.0.custom = Some(fields);
-    //     self
-    // }
-
     pub fn build(self) -> Claims<T> {
         self.0
     }

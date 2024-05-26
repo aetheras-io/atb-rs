@@ -53,7 +53,10 @@ impl<T: Clone + Send + Sync + 'static> FromRequest for SafeData<T> {
 
 #[cfg(feature = "jwt")]
 pub mod jwt {
-    use atb_types::jwt::{Claims as ClaimsInner, Decoder, Error as JwtError, FINGERPRINT_COOKIE};
+    use atb_types::jwt::{
+        jsonwebtoken::{DecodingKey, EncodingKey, Header},
+        Claims as ClaimsInner, Error as JwtError, FINGERPRINT_COOKIE,
+    };
 
     use std::rc::Rc;
 
@@ -64,6 +67,9 @@ pub mod jwt {
     use actix_web::{Error as ActixError, FromRequest, HttpMessage, HttpRequest};
     use futures::future::{self, Either, Ready};
     use time::OffsetDateTime;
+
+    pub type Signer<'a> = (&'a Header, &'a EncodingKey);
+    pub type Decoder<'a> = (&'a Header, &'a DecodingKey);
 
     pub struct Claims(ClaimsInner);
 
@@ -200,7 +206,7 @@ pub mod jwt {
 
             match (suit.extractor)(&req).and_then(|jwt| {
                 log::debug!("extracted jwt: {}", jwt);
-                ClaimsInner::decode(&jwt, suit.decoder).map_err(Into::into)
+                ClaimsInner::decode(&jwt, suit.decoder.0, suit.decoder.1).map_err(Into::into)
             }) {
                 Ok(inner) => {
                     if (suit.validator)(&req, &inner) {
