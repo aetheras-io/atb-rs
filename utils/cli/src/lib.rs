@@ -4,7 +4,7 @@ pub use once_cell;
 use clap::{CommandFactory, FromArgMatches, Parser};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
-use strum_macros::{Display, EnumString};
+use strum_macros::{AsRefStr, Display, EnumString};
 
 pub type DateTime = chrono::DateTime<chrono::Utc>;
 
@@ -177,7 +177,7 @@ impl ProcessInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, EnumString, Display)]
+#[derive(Clone, Debug, PartialEq, Serialize, EnumString, Display, AsRefStr)]
 pub enum Environment {
     #[strum(serialize = "prod", serialize = "production")]
     Production,
