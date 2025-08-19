@@ -1,16 +1,23 @@
 [package]
 name = "atb-tokio-ext"
-version.workspace = true 
-authors.workspace = true 
-edition.workspace = true 
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
 repository.workspace = true
 
 [dependencies]
 atb = { path = "../../" }
 
-log = { workspace = true } 
+log = { workspace = true }
 anyhow = { workspace = true }
-futures = { workspace = true } 
+futures = { workspace = true }
 
-tokio = { version = "1", features = ["signal", "rt-multi-thread", "net", "time", "macros", "sync"] }
+tokio = { version = "1", features = [
+  "signal",
+  "rt-multi-thread",
+  "net",
+  "time",
+  "macros",
+  "sync",
+] }
 async-trait = "0.1"

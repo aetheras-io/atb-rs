@@ -13,7 +13,7 @@ use std::{
 pub fn generate_cargo_keys() {
     let (platform, rustc_semver) = version_meta().map_or_else(
         |e| {
-            println!("cargo:warning=rustc version_meta failed: {}", e);
+            println!("cargo:warning=rustc version_meta failed: {e}");
             ("".to_owned(), "".to_owned())
         },
         |r| (r.host.to_owned(), format!("{}-{:?}", r.semver, r.channel)),
@@ -23,7 +23,7 @@ pub fn generate_cargo_keys() {
         Cow::from(hash.trim().to_owned())
     } else {
         match Command::new("git")
-            .args(&["rev-parse", "--short", "HEAD"])
+            .args(["rev-parse", "--short", "HEAD"])
             .output()
         {
             Ok(o) if o.status.success() => {
@@ -35,14 +35,14 @@ pub fn generate_cargo_keys() {
                 Cow::from("unknown")
             }
             Err(err) => {
-                println!("cargo:warning=Failed to execute git command: {}", err);
+                println!("cargo:warning=Failed to execute git command: {err}");
                 Cow::from("unknown")
             }
         }
     };
 
     let branch = match Command::new("git")
-        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
     {
         Ok(o) if o.status.success() => {
@@ -54,15 +54,15 @@ pub fn generate_cargo_keys() {
             Cow::from("unknown")
         }
         Err(err) => {
-            println!("cargo:warning=Failed to execute git command: {}", err);
+            println!("cargo:warning=Failed to execute git command: {err}");
             Cow::from("unknown")
         }
     };
 
-    println!("cargo:rustc-env=ATB_CLI_PLATFORM={}", platform);
-    println!("cargo:rustc-env=ATB_CLI_RUSTC_INFO={}", rustc_semver);
-    println!("cargo:rustc-env=ATB_CLI_GIT_COMMIT_HASH={}", commit);
-    println!("cargo:rustc-env=ATB_CLI_GIT_BRANCH={}", branch);
+    println!("cargo:rustc-env=ATB_CLI_PLATFORM={platform}");
+    println!("cargo:rustc-env=ATB_CLI_RUSTC_INFO={rustc_semver}");
+    println!("cargo:rustc-env=ATB_CLI_GIT_COMMIT_HASH={commit}");
+    println!("cargo:rustc-env=ATB_CLI_GIT_BRANCH={branch}");
     println!(
         "cargo:rustc-env=ATB_CLI_IMPL_VERSION={}",
         get_version(&commit, &platform)
@@ -95,7 +95,7 @@ pub fn rerun_if_git_head_changed() {
     while manifest_dir.parent().is_some() {
         match get_git_paths(&manifest_dir) {
             Err(err) => {
-                eprintln!("cargo:warning=Unable to read the Git repository: {}", err);
+                eprintln!("cargo:warning=Unable to read the Git repository: {err}");
 
                 return;
             }
@@ -139,8 +139,7 @@ fn get_git_paths(path: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
 
                 Ok(Some(vec![git_head_path, git_refs_path]))
             } else {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
+                Err(io::Error::other(
                     "You are most likely in a detached HEAD state",
                 ))
             }
@@ -172,14 +171,12 @@ fn get_git_paths(path: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
 
                 Ok(Some(vec![git_head_path, git_refs_path]))
             } else {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
+                Err(io::Error::other(
                     "You are most likely in a detached HEAD state",
                 ))
             }
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
+            Err(io::Error::other(
                 "Invalid .git format (Not a directory or a file)",
             ))
         }

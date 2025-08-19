@@ -1,16 +1,16 @@
 [package]
 name = "atb-fixtures-utils"
-version.workspace = true 
-authors.workspace = true 
-edition.workspace = true 
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
 repository.workspace = true
 
 [dependencies]
-once_cell = { workspace = true } 
+once_cell = { workspace = true }
 jsonwebtoken = { workspace = true, optional = true }
 
 uuid = { workspace = true }
-fake = { version = "2.5", features = ["derive"] }
+fake = { version = "4", features = ["derive"] }
 
 [features]
 default = []

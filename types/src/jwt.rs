@@ -105,7 +105,7 @@ impl<T> Builder<T> {
 
     pub fn build_fingerprinted(mut self) -> (Claims<T>, String) {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut entropy = [0u8; 32];
         rng.fill(&mut entropy[..]);
 

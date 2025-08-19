@@ -48,19 +48,22 @@ pub mod empty_string_none {
 
 pub mod bytes_as_base64 {
     use super::*;
+    // use base64::prelude::*;
+    use base64::prelude::{Engine as _, BASE64_STANDARD};
 
     pub fn serialize<T, S>(bytes: &T, se: S) -> Result<S::Ok, S::Error>
     where
         T: AsRef<[u8]>,
         S: serde::Serializer,
     {
-        se.serialize_str(&base64::encode(bytes.as_ref()))
+        se.serialize_str(&BASE64_STANDARD.encode(bytes.as_ref()))
     }
 
     pub fn deserialize<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        String::deserialize(de).and_then(|s| base64::decode(s).map_err(serde::de::Error::custom))
+        String::deserialize(de)
+            .and_then(|s| BASE64_STANDARD.decode(s).map_err(serde::de::Error::custom))
     }
 }

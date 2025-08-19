@@ -1,8 +1,9 @@
 [package]
 name = "atb-build-utils"
-version = "0.14.5"
-authors = ["Denis Tsai <denistsai@aetheras.io>"]
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
 
 [dependencies]
-rustc_version = "0.4.0"
+rustc_version = "0.4"

@@ -4,3 +4,4 @@ Cargo.lock
 
 # OSX
 .DS_Store
+.aider*

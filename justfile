@@ -22,7 +22,7 @@ build:
 	(cd ext/serde && cargo build)
 	(cd utils/cli && cargo build)
 	(cd utils/fixtures && cargo build)
-	(cd utils/fixtures && cargo build --features jwt)
+	(cd utils/fixtures && cargo build --features jwt) && cargo clippy --all
 
 tag:
 	git tag -a v{{SEM_VER}} -m "v{{SEM_VER}}"

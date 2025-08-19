@@ -1,15 +1,15 @@
 [package]
 name = "atb-cli-utils"
-version.workspace = true 
-authors.workspace = true 
-edition.workspace = true 
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
 repository.workspace = true
 
 [dependencies]
 serde = { workspace = true }
+chrono = { workspace = true }
+once_cell = { workspace = true }
 
 clap = { version = "4", features = ["derive", "env", "cargo", "string"] }
-chrono = { workspace = true }
-once_cell = { workspace = true } 
-strum = "0.24"
-strum_macros = "0.24"
+strum = "0.27"
+strum_macros = "0.27"

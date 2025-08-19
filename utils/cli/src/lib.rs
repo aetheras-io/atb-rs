@@ -88,7 +88,7 @@ pub trait AtbCli: Sized {
     where
         Self: Parser + Sized,
     {
-        <Self as AtbCli>::from_iter(&mut std::env::args_os())
+        <Self as AtbCli>::from_iter(std::env::args_os())
     }
 
     fn set_globals(base: &BaseCli) {
