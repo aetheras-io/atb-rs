@@ -16,6 +16,7 @@ pub struct BaseCli {
     /// Executing Environment
     #[arg(short, long, env = "ATB_CLI_ENV", default_value = "dev")]
     pub env: Environment,
+
     /// Activate debug mode
     #[arg(short, long, env = "ATB_CLI_DEBUG")]
     pub debug: bool,
@@ -33,26 +34,26 @@ pub trait AtbCli: Sized {
 
     /// Application name.
     fn name() -> String {
-        "".to_owned()
+        "unknown".to_owned()
     }
 
     /// Application version.
     fn version() -> String {
-        "".to_owned()
+        "unknown".to_owned()
     }
 
     /// Application authors.
     fn authors() -> Vec<String> {
-        vec![]
+        vec!["unknown".to_owned()]
     }
     /// Application description.
     fn description() -> String {
-        "".to_owned()
+        "unknown".to_owned()
     }
 
     /// Application repository.
     fn repository() -> String {
-        "".to_owned()
+        "unknown".to_owned()
     }
 
     /// Returns implementation details.  
@@ -60,27 +61,34 @@ pub trait AtbCli: Sized {
 
     /// Returns git commit hash.
     fn commit() -> String {
-        "".to_owned()
+        "unknown".to_owned()
     }
 
     /// Returns git branch.
     fn branch() -> String {
-        "".to_owned()
+        "unknown".to_owned()
     }
 
     /// Returns OS platform.
     fn platform() -> String {
-        "".to_owned()
+        "unknown".to_owned()
     }
 
     /// Returns rustc version.
     fn rustc_info() -> String {
-        "".to_owned()
+        "unknown".to_owned()
     }
 
     /// Returns the client ID: `{name}/v{version}`
     fn client_id() -> String {
         format!("{}/v{}", Self::name(), Self::impl_version())
+    }
+
+    /// Optional hook to expose the embedded `BaseCli` from the parsed value.
+    /// If implemented, `parse()`/`from_iter()` will automatically call `set_globals`
+    /// using the returned `BaseCli`. Default is `None` for backward compatibility.
+    fn globals_from(&self) -> Option<&BaseCli> {
+        None
     }
 
     /// Helper function used to parse the command line arguments
@@ -92,22 +100,19 @@ pub trait AtbCli: Sized {
     }
 
     fn set_globals(base: &BaseCli) {
-        PROCESS_INFO
-            .set(ProcessInfo {
-                name: Self::name(),
-                version: Self::version(),
-                branch: Self::branch(),
-                commit: Self::commit(),
-                platform: Self::platform(),
-                rustc: Self::rustc_info(),
-                start_time: chrono::Utc::now(),
-                environment: base.env.clone(),
-            })
-            .expect("cli parse should only be executed once.");
+        // Idempotent: ignore if already initialized
+        let _ = PROCESS_INFO.set(ProcessInfo {
+            name: Self::name(),
+            version: Self::version(),
+            branch: Self::branch(),
+            commit: Self::commit(),
+            platform: Self::platform(),
+            rustc: Self::rustc_info(),
+            start_time: chrono::Utc::now(),
+            environment: base.env.clone(),
+        });
 
-        DEBUG
-            .set(base.debug)
-            .expect("cli parse should only be executed once.");
+        let _ = DEBUG.set(base.debug);
     }
 
     /// Helper function used to parse the command line arguments. This is the equivalent of
@@ -144,7 +149,14 @@ pub trait AtbCli: Sized {
 
         let matches = app.try_get_matches_from(iter).unwrap_or_else(|e| e.exit());
 
-        <Self as FromArgMatches>::from_arg_matches(&matches).unwrap_or_else(|e| e.exit())
+        let parsed: Self =
+            <Self as FromArgMatches>::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+
+        if let Some(base) = parsed.globals_from() {
+            <Self as AtbCli>::set_globals(base);
+        }
+
+        parsed
     }
 }
 

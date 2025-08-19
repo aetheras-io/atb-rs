@@ -1,11 +1,11 @@
-# A Tool Box, Rust (ATB) 
+# A Tool Box, Rust (ATB)
 
-A collection of tools used for rust based backend projects.  
+A collection of tools used for rust based backend projects.
 
 # Usage
 
 ```Cargo.toml
 [dependencies]
-atb = { git = "https://github.com/aetheras-io/atb-rs", tag = "v0.14.1", features = ["eventsourcing", "fixtures"] }
-atb-types = { git = "https://github.com/aetheras-io/atb-rs", tag = "v0.14.1", features = ["jwt"] }
+atb = { git = "https://github.com/aetheras-io/atb-rs", tag = "v1.1.0", features = ["eventsourcing", "fixtures"] }
+atb-types = { git = "https://github.com/aetheras-io/atb-rs", tag = "v1.1.0", features = ["jwt"] }
 ```

@@ -1,4 +1,12 @@
+// Backward-compatible wrapper: initialize tracing, ignoring errors if already set.
 pub fn init_tracer(filters: Option<&str>, is_dev: bool) {
+    if let Err(e) = try_init_tracer(filters, is_dev) {
+        // keep noise minimal; many apps init their own global subscriber
+        log::trace!("init_tracer skipped: {}", e);
+    }
+}
+
+pub fn try_init_tracer(filters: Option<&str>, is_dev: bool) -> anyhow::Result<()> {
     use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
 
     // Prefer explicit filters; fall back to RUST_LOG or defaults.
@@ -7,6 +15,10 @@ pub fn init_tracer(filters: Option<&str>, is_dev: bool) {
     } else {
         EnvFilter::from_default_env()
     };
+
+    // Bridge `log` macros into `tracing` so crates using `log` are captured.
+    // Ignore error if a logger is already set by the application.
+    let _ = tracing_log::LogTracer::init();
 
     if is_dev {
         // Human-friendly console logs for local development.
@@ -21,7 +33,7 @@ pub fn init_tracer(filters: Option<&str>, is_dev: bool) {
 
         let subscriber = Registry::default().with(env_filter).with(fmt_layer);
         tracing::subscriber::set_global_default(subscriber)
-            .expect("failed to set tracing default subscriber");
+            .map_err(|e| anyhow::anyhow!("failed to set tracing default subscriber: {e}"))?;
     } else {
         // Production: structured JSON logs (one JSON object per line).
         let fmt_layer = fmt::layer()
@@ -39,12 +51,13 @@ pub fn init_tracer(filters: Option<&str>, is_dev: bool) {
 
         let subscriber = Registry::default().with(env_filter).with(fmt_layer);
         tracing::subscriber::set_global_default(subscriber)
-            .expect("failed to set tracing default subscriber");
+            .map_err(|e| anyhow::anyhow!("failed to set tracing default subscriber: {e}"))?;
     }
+    Ok(())
 }
 
 use tracing_appender::non_blocking;
-pub fn init_file_tracer() -> non_blocking::WorkerGuard {
+pub fn try_init_file_tracer() -> anyhow::Result<non_blocking::WorkerGuard> {
     use tracing_appender::rolling;
     use tracing_subscriber::{fmt, layer::SubscriberExt, Registry};
 
@@ -75,9 +88,28 @@ pub fn init_file_tracer() -> non_blocking::WorkerGuard {
     let subscriber = Registry::default().with(env_filter).with(fmt_layer);
 
     // Note: Only the first call to set_global_default succeeds.
+    // Bridge `log` macros into `tracing` (ignore error if already set).
+    let _ = tracing_log::LogTracer::init();
     tracing::subscriber::set_global_default(subscriber)
-        .expect("failed to set tracing default subscriber");
-    guard
+        .map_err(|e| anyhow::anyhow!("failed to set tracing default subscriber: {e}"))?;
+    Ok(guard)
+}
+
+// Backward-compatible wrapper: initialize file tracer, ignoring errors if already set.
+pub fn init_file_tracer() -> non_blocking::WorkerGuard {
+    match try_init_file_tracer() {
+        Ok(guard) => guard,
+        Err(e) => {
+            log::trace!("init_file_tracer skipped: {}", e);
+            // Create a dummy, non-active guard so callers can continue to hold a guard.
+            // We use a rolling appender to construct a guard even if subscriber wasn't set.
+            use tracing_appender::rolling;
+            let (nb, guard) =
+                tracing_appender::non_blocking(rolling::daily("./target/logs", "app.log"));
+            drop(nb); // not used without a layer
+            guard
+        }
+    }
 }
 
 pub fn init_logger(pattern: &str, deep: bool) {
@@ -113,7 +145,7 @@ pub fn init_logger(pattern: &str, deep: bool) {
                 "line": record.line(),
                 "msg": record.args().to_string(),
             });
-            writeln!(buf, "{}", payload.to_string())
+            writeln!(buf, "{payload}")
         });
     } else if deep {
         builder.format(move |buf, record| {
@@ -157,6 +189,8 @@ pub fn init_logger(pattern: &str, deep: bool) {
     };
 
     if builder.try_init().is_err() {
-        log::info!("Global logger already initialized. Skipping");
+        // Avoid noisy panics when another logger/subscriber is already set.
+        // Use `trace` to minimize noise in production.
+        log::trace!("Global logger already initialized. Skipping env_logger init");
     }
 }

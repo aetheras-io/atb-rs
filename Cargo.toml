@@ -2,13 +2,12 @@
 description = "A Tool Box"
 authors = ["Denis Tsai <denistsai@aetheras.io"]
 version = "1.1.0"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/aetheras-io/atb-rs"
 
 [workspace]
 members = [
   "types",
-  "ext/actix",
   "ext/tokio",
   "ext/serde",
   # "ext/sqlx",
@@ -28,6 +27,7 @@ tracing-subscriber = { version = "0.3", features = [
   "json",
   "parking_lot",
 ] }
+tracing-log = "0.2"
 thiserror = "2"
 anyhow = "1"
 futures = "0.3"
@@ -57,6 +57,7 @@ ansi_term = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-log = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }

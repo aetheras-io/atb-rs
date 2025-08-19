@@ -151,7 +151,7 @@ fn get_git_paths(path: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
             let dir_vec: Vec<&str> = git_contents.split(": ").collect();
             let git_path = dir_vec[1].trim();
 
-            // Echo the HEAD psth
+            // Echo the HEAD path
             let git_head_path = PathBuf::from(git_path).join("HEAD");
 
             // Find out what the full path to the .git dir is.
