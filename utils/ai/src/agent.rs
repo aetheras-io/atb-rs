@@ -52,26 +52,35 @@ pub fn null_tool_handler(
 
 #[derive(Debug, Clone, Default)]
 pub struct AgentContext {
-    pub conversation: Vec<InputItem>,
-    pub tool_results: Vec<serde_json::Value>,
+    pub(crate) conversation: Vec<InputItem>,
+    pub(crate) tool_results: Vec<serde_json::Value>,
     /// Index marking the end of the initial seeded context.
     /// All items at indices >= baseline_len are considered runtime-generated.
-    pub baseline_len: usize,
+    pub(crate) baseline_len: usize,
 }
 
 impl AgentContext {
-    /// Returns cloned message items (InputMessage) from the conversation.
-    pub fn messages(&self) -> Vec<InputMessage> {
-        self.conversation
-            .iter()
-            .filter_map(|item| {
-                if let InputItem::Message(msg) = item {
-                    Some(msg.clone())
-                } else {
-                    None
-                }
-            })
-            .collect()
+    /// Returns an iterator over borrowed message items from the conversation.
+    pub fn messages_iter(&self) -> impl Iterator<Item = &InputMessage> {
+        self.conversation.iter().filter_map(|item| match item {
+            InputItem::Message(msg) => Some(msg),
+            _ => None,
+        })
+    }
+
+    /// Returns the full conversation history, including messages, tool calls, and outputs.
+    pub fn history(&self) -> &[InputItem] {
+        &self.conversation
+    }
+
+    /// Read-only view of tool results.
+    pub fn tool_results(&self) -> &[serde_json::Value] {
+        &self.tool_results
+    }
+
+    /// Read-only view of baseline length.
+    pub fn baseline_len(&self) -> usize {
+        self.baseline_len
     }
 
     /// Clears runtime history, restoring the conversation back to the baseline
@@ -269,7 +278,7 @@ impl Agent {
     ) -> Result<Vec<FunctionToolCall>, AgentError> {
         let conversation = {
             let guard = ctx.lock().unwrap();
-            guard.conversation.clone()
+            guard.history().to_vec()
         };
         // tracing::info!("AI CONVERSATION: {conversation:?}");
         let req = RequestPayloadBuilder::default()
