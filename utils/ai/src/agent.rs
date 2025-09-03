@@ -294,8 +294,7 @@ impl Agent {
                                         status: None,
                                     };
                                     ctx.conversation.push(InputItem::FunctionCall(call));
-                                    ctx.conversation
-                                        .push(InputItem::FunctionCallOutput(output));
+                                    ctx.conversation.push(InputItem::FunctionCallOutput(output));
                                     ctx.tool_results.push(json_out);
                                 }
                                 Err(err) => {
@@ -423,14 +422,13 @@ impl Agent {
                     for part in msg.content {
                         if let openai::responses::OutputContent::OutputText(t) = part {
                             if !text.is_empty() {
-                                text.push_str("\n");
+                                text.push('\n');
                             }
                             text.push_str(&t.text);
                         }
                     }
                     if !text.is_empty() {
-                        ctx.conversation
-                            .push((MessageRole::Assistant, text).into());
+                        ctx.conversation.push((MessageRole::Assistant, text).into());
                     }
                 }
                 OutputItem::FunctionCall(call) => {
