@@ -21,3 +21,4 @@ reqwest = { version = "0.12.23", features = ["json", "stream", "rustls-tls"] }
 derive_builder = "0.20.2"
 eventsource-stream = "0.2.3"
 tokio-stream = "0.1.17"
+async-stream = "0.3"

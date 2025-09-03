@@ -17,6 +17,7 @@ use futures::{
     stream::{StreamExt, TryStreamExt},
 };
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 pub const AGENT_DONE_EVENT: &str = "atb.ai.done";
 pub const AGENT_ERROR_EVENT: &str = "atb.ai.error";
@@ -97,6 +98,7 @@ pub struct Agent {
     run_id: Uuid,
     system_prompt: String,
     user_data: Option<String>,
+    model: String,
     max_turns: usize,
     tools: Vec<FunctionTool>,
     tool_handlers: HashMap<String, Arc<ToolHandlerFn>>,
@@ -115,6 +117,7 @@ impl Agent {
             run_id,
             system_prompt: system_prompt.to_owned(),
             user_data,
+            model: GPT4_O.to_owned(),
             max_turns: 10,
             tools: vec![],
             tool_handlers: HashMap::new(),
@@ -154,42 +157,24 @@ impl Agent {
         self
     }
 
-    // Conversation helpers removed; callers should operate on AgentContext directly.
+    /// Set the model identifier used for responses (default: `gpt-4o`).
+    pub fn with_model<I: Into<String>>(mut self, model: I) -> Self {
+        self.model = model.into();
+        self
+    }
 
-    /// Usage Example
-    ///
-    /// ```rust
-    /// let ctx = agent.seed_context();
-    /// let mut stream = agent
-    ///     .respond_stream(ctx.clone(), &chat.message)
-    ///     .await
-    ///     .unwrap();
-    ///
-    /// Ok(Sse::new(async_stream::stream! {
-    ///     while let Some(Ok(evt)) = stream.next().await {
-    ///         if evt.event == AGENT_DONE_EVENT {
-    ///             // doesn't need to be cached anymore; it's considered done
-    ///             // cache.invalidate(&user_id);
-    ///         }
-    ///         yield Ok(Event::default().event(evt.event).data(evt.data))
-    ///     }
-    /// }))
-    /// ```
     pub async fn respond_stream(
         &mut self,
-        ctx: Arc<Mutex<AgentContext>>,
+        mut ctx: AgentContext,
         user_input: &str,
-    ) -> Result<impl futures::Stream<Item = Result<SseEvent, AgentError>>, AgentError> {
-        ctx.lock()
-            .map_err(|e| AgentError::Other(e.to_string()))?
-            .conversation
+    ) -> Result<AgentRun, AgentError> {
+        ctx.conversation
             .push((MessageRole::User, user_input.to_owned()).into());
 
         let (tx, rx) = mpsc::unbounded_channel();
 
         let agent = self.clone();
-        let ctx_for_task = ctx.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let mut turns: usize = 0;
             loop {
                 if turns >= agent.max_turns {
@@ -200,7 +185,8 @@ impl Agent {
                     break;
                 }
                 turns += 1;
-                match agent.run_once(&ctx_for_task, &tx).await {
+
+                match agent.run_once_stream(&mut ctx, &tx).await {
                     Ok(mut tools) => {
                         if !tools.is_empty() {
                             for call in tools.drain(..) {
@@ -214,14 +200,10 @@ impl Agent {
                                                 id: None,
                                                 status: None,
                                             };
-                                            let mut ctx_guard = ctx_for_task.lock().unwrap();
-                                            ctx_guard
-                                                .conversation
-                                                .push(InputItem::FunctionCall(call));
-                                            ctx_guard
-                                                .conversation
+                                            ctx.conversation.push(InputItem::FunctionCall(call));
+                                            ctx.conversation
                                                 .push(InputItem::FunctionCallOutput(output));
-                                            ctx_guard.tool_results.push(json_out);
+                                            ctx.tool_results.push(json_out);
                                         }
                                         Err(err) => {
                                             let _ = tx.send(Ok(SseEvent {
@@ -229,13 +211,11 @@ impl Agent {
                                                 data: err.to_string(),
                                                 ..Default::default()
                                             }));
-                                            // Send error event and end the task
-                                            return;
+                                            return ctx;
                                         }
                                     }
                                 }
                             }
-                            //run_once again to allow the agent to respond to the tool calls
                             continue;
                         } else {
                             break;
@@ -243,14 +223,13 @@ impl Agent {
                     }
 
                     Err(e) => {
-                        tracing::trace!("run_once error: {e:?}");
+                        tracing::trace!("run_once_stream error: {e:?}");
                         let _ = tx.send(Ok(SseEvent {
                             event: AGENT_ERROR_EVENT.to_owned(),
                             data: e.to_string(),
                             ..Default::default()
                         }));
-                        // Send error event and end the task
-                        return;
+                        return ctx;
                     }
                 }
             }
@@ -264,25 +243,83 @@ impl Agent {
                 .to_string(),
                 ..Default::default()
             }));
+
+            ctx
         });
 
-        Ok(Box::pin(
-            tokio_stream::wrappers::UnboundedReceiverStream::new(rx),
-        ))
+        Ok(AgentRun {
+            stream: tokio_stream::wrappers::UnboundedReceiverStream::new(rx),
+            handle,
+        })
     }
 
-    async fn run_once(
+    /// Run the agent to completion without streaming events.
+    ///
+    /// - Appends the `user_input` to the conversation
+    /// - Repeatedly queries the model and executes any returned tool calls
+    /// - Returns the final `AgentContext` once the model no longer requests tools
+    pub async fn respond(
         &self,
-        ctx: &Arc<Mutex<AgentContext>>,
+        mut ctx: AgentContext,
+        user_input: &str,
+    ) -> Result<AgentContext, AgentError> {
+        ctx.conversation
+            .push((MessageRole::User, user_input.to_owned()).into());
+
+        let mut turns: usize = 0;
+        loop {
+            if turns >= self.max_turns {
+                tracing::warn!(
+                    "Max turn count reached ({}). Stopping agent loop.",
+                    self.max_turns
+                );
+                break;
+            }
+            turns += 1;
+
+            match self.run_once(&mut ctx).await {
+                Ok(mut tools) => {
+                    if tools.is_empty() {
+                        break;
+                    }
+
+                    for call in tools.drain(..) {
+                        if let Some(handler) = self.tool_handlers.get(&call.name) {
+                            match handler(&call).await {
+                                Ok(json_out) => {
+                                    let output = InputFunctionCallOutput {
+                                        call_id: call.call_id.clone(),
+                                        output: json_out.to_string(),
+                                        id: None,
+                                        status: None,
+                                    };
+                                    ctx.conversation.push(InputItem::FunctionCall(call));
+                                    ctx.conversation
+                                        .push(InputItem::FunctionCallOutput(output));
+                                    ctx.tool_results.push(json_out);
+                                }
+                                Err(err) => {
+                                    return Err(AgentError::Other(err.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(ctx)
+    }
+
+    async fn run_once_stream(
+        &self,
+        ctx: &mut AgentContext,
         tx: &mpsc::UnboundedSender<Result<SseEvent, AgentError>>,
     ) -> Result<Vec<FunctionToolCall>, AgentError> {
-        let conversation = {
-            let guard = ctx.lock().unwrap();
-            guard.history().to_vec()
-        };
-        // tracing::info!("AI CONVERSATION: {conversation:?}");
+        let conversation = ctx.history().to_vec();
         let req = RequestPayloadBuilder::default()
-            .model(GPT4_O)
+            .model(self.model.clone())
             .input(conversation.into())
             .stream(true)
             .tools(self.tools.iter().cloned().map(Into::into).collect())
@@ -290,7 +327,6 @@ impl Agent {
             .build()
             .expect("builder builds. qed");
 
-        // tracing::trace!("req: {}", serde_json::to_string_pretty(&req).unwrap());
         let resp = self
             .client
             .build_request(reqwest::Method::POST, "responses")
@@ -310,8 +346,6 @@ impl Agent {
 
         let mut tool_calls = vec![];
         while let Some(evt) = stream.try_next().await? {
-            // tracing::info!("LLM event {}", evt.event);
-            // tracing::info!("LLM data {}", evt.data);
             match serde_json::from_str::<ResponseStreamEvent>(&evt.data).unwrap() {
                 ResponseStreamEvent::OutputTextDelta(_) => {
                     let _ = tx.send(Ok(evt));
@@ -319,9 +353,7 @@ impl Agent {
                 ResponseStreamEvent::OutputTextDone(output) => {
                     use openai::responses::MessageRole;
                     let _ = tx.send(Ok(evt));
-                    ctx.lock()
-                        .map_err(|e| AgentError::Other(e.to_string()))?
-                        .conversation
+                    ctx.conversation
                         .push((MessageRole::Assistant, output.text).into());
                 }
                 ResponseStreamEvent::OutputItemAdded(added) => {
@@ -342,7 +374,6 @@ impl Agent {
                     let _ = tx.send(Ok(evt));
                 }
                 ResponseStreamEvent::Error(err_event) => {
-                    // Propagate model errors (e.g. context_length_exceeded) as AgentError
                     return Err(AgentError::Other(err_event.error.message));
                 }
                 ResponseStreamEvent::Completed(_) => {
@@ -351,12 +382,200 @@ impl Agent {
                     }
                     return Ok(tool_calls);
                 }
-
                 evt => tracing::trace!("{evt:?}"),
             }
         }
 
-        // if the stream ends unexpectedly, treat it as error?
         Ok(tool_calls)
+    }
+
+    /// Single non-streaming turn: sends conversation, updates context with any assistant messages,
+    /// and returns any function tool calls to execute. Returns empty when there are no tools.
+    async fn run_once(&self, ctx: &mut AgentContext) -> Result<Vec<FunctionToolCall>, AgentError> {
+        let conversation = ctx.history().to_vec();
+        let req = RequestPayloadBuilder::default()
+            .model(self.model.clone())
+            .input(conversation.into())
+            .stream(false)
+            .tools(self.tools.iter().cloned().map(Into::into).collect())
+            .tool_choice(ToolChoice::Option(ToolChoiceOption::Auto))
+            .build()
+            .expect("builder builds. qed");
+
+        let resp = self
+            .client
+            .build_request(reqwest::Method::POST, "responses")
+            .json(&req)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let body: openai::responses::Response = resp.json().await?;
+
+        // Collect any tool calls to execute next turn
+        let mut tool_calls = Vec::new();
+
+        for item in body.output.into_iter() {
+            match item {
+                OutputItem::Message(msg) => {
+                    // Aggregate any text parts into a single assistant message
+                    let mut text = String::new();
+                    for part in msg.content {
+                        if let openai::responses::OutputContent::OutputText(t) = part {
+                            if !text.is_empty() {
+                                text.push_str("\n");
+                            }
+                            text.push_str(&t.text);
+                        }
+                    }
+                    if !text.is_empty() {
+                        ctx.conversation
+                            .push((MessageRole::Assistant, text).into());
+                    }
+                }
+                OutputItem::FunctionCall(call) => {
+                    tool_calls.push(call);
+                }
+                OutputItem::FileSearchCall(_) => {
+                    // Currently ignored for non-streaming mode; nothing to add to context
+                }
+            }
+        }
+
+        Ok(tool_calls)
+    }
+}
+
+/// Handle returned by `respond_stream` containing the event stream,
+///
+/// - Owns the background agent task via `handle` which yields the final `AgentContext` when the
+///   model run completes.
+/// - Exposes a `stream` of intermediate `SseEvent`s you can forward to clients or inspect for
+///   logging/metrics.
+pub struct AgentRun {
+    pub(crate) stream:
+        tokio_stream::wrappers::UnboundedReceiverStream<Result<SseEvent, AgentError>>,
+    pub(crate) handle: JoinHandle<AgentContext>,
+}
+
+impl AgentRun {
+    /// Consume this `AgentRun` and return its raw parts for manual composition.
+    ///
+    /// This lets callers build custom pipelines without exposing struct fields:
+    /// ```rust,no_run
+    /// use axum::response::sse::{Event, Sse};
+    /// use futures::StreamExt;
+    /// use anyhow::Result;
+    /// async fn handler(mut agent: Agent, ctx: AgentContext, user_input: String) -> Result<Sse<impl futures::Stream<Item = Result<Event, std::convert::Infallible>>>> {
+    ///     let run = agent.respond_stream(ctx, &user_input).await?;
+    ///     let (stream, handle) = run.into_parts();
+    ///     let stream = async_stream::stream! {
+    ///         while let Some(res) = stream.next().await {
+    ///             match res {
+    ///                 Ok(ev) => {
+    ///                     // Optionally record metrics/logging here before sending
+    ///                     yield Ok(Event::default().event(ev.event).data(ev.data));
+    ///                 }
+    ///                 Err(e) => {
+    ///                     // Convert internal error into an SSE error event
+    ///                     yield Ok(Event::default().event("error").data(e.to_string()));
+    ///                 }
+    ///             }
+    ///         }
+    ///         // Stream ended; now await the final context and use it
+    ///         match run.handle.await {
+    ///             Ok(final_ctx) => {
+    ///                 // e.g., persist final_ctx or update caches
+    ///                 let _ = final_ctx.history().len();
+    ///             }
+    ///             Err(join_err) => {
+    ///                 // Join error from background task
+    ///                 let _ = join_err.to_string();
+    ///             }
+    ///         }
+    ///     };
+    ///     Ok(Sse::new(stream))
+    /// }
+    /// ```
+    ///
+    /// ```rust,no_run
+    /// use axum::response::sse::{Event, Sse};
+    /// use futures::StreamExt;
+    /// # async fn route(run: AgentRun) -> Sse<impl futures::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    ///     let (stream, handle) = run.into_parts();
+    ///     let stream = async_stream::stream! {
+    ///         futures::pin_mut!(stream);
+    ///         while let Some(res) = stream.next().await {
+    ///             match res {
+    ///                 Ok(ev) => yield Ok(Event::default().event(ev.event).data(ev.data)),
+    ///                 Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+    ///             }
+    ///         }
+    ///         let _ = handle.await; // await and optionally use the final AgentContext
+    ///     };
+    ///     Sse::new(stream)
+    /// }
+    /// ```
+    pub fn into_parts(
+        self,
+    ) -> (
+        tokio_stream::wrappers::UnboundedReceiverStream<Result<SseEvent, AgentError>>,
+        JoinHandle<AgentContext>,
+    ) {
+        (self.stream, self.handle)
+    }
+
+    /// Consume this run and produce a stream that forwards events and runs a finalizer.
+    ///
+    /// This method:
+    /// - Forwards every `Result<SseEvent, AgentError>` from the internal `stream`.
+    /// - After the stream ends, awaits the `handle` for the final `AgentContext`.
+    /// - Invokes the provided async `on_done` callback with the final context.
+    ///
+    /// Common use-case: finalize into an HTTP SSE stream while persisting the context at the end.
+    ///
+    /// Axum example returning `Sse<...>`:
+    ///
+    /// ```rust,no_run
+    /// use axum::response::sse::{Event, Sse};
+    /// use futures::StreamExt;
+    /// # use anyhow::Result;
+    /// # async fn save_ctx(_pool: &(), _ctx: &AgentContext) -> Result<(), ()> { Ok(()) }
+    /// # async fn route(mut agent: Agent, ctx: AgentContext, user_input: String, pool: ()) -> Result<Sse<impl futures::Stream<Item = Result<Event, std::convert::Infallible>>>> {
+    ///     let run = agent.respond_stream(ctx, &user_input).await?;
+    ///     let stream = run
+    ///         .finalize_with(move |final_ctx| {
+    ///             let pool = pool; // capture things by move
+    ///             async move {
+    ///                 let _ = save_ctx(&pool, &final_ctx).await;
+    ///             }
+    ///         })
+    ///         .map(|res| match res {
+    ///             Ok(ev) => Ok(Event::default().event(ev.event).data(ev.data)),
+    ///             Err(e) => Ok(Event::default().event("error").data(e.to_string())),
+    ///         });
+    ///     Ok(Sse::new(stream))
+    /// }
+    /// ```
+    pub fn finalize_with<F, Fut>(
+        self,
+        on_done: F,
+    ) -> impl futures::Stream<Item = Result<SseEvent, AgentError>>
+    where
+        F: FnOnce(AgentContext) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = ()> + Send + 'static,
+    {
+        async_stream::stream! {
+            let (mut stream, handle) = self.into_parts();
+
+            while let Some(evt) = stream.next().await {
+                yield evt;
+            }
+
+            match handle.await {
+                Ok(final_ctx) => on_done(final_ctx).await,
+                Err(e) => tracing::error!("agent join error: {e}"),
+            }
+        }
     }
 }
