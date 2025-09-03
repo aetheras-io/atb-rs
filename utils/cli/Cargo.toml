@@ -6,9 +6,9 @@ edition.workspace = true
 repository.workspace = true
 
 [dependencies]
-serde = { workspace = true }
-chrono = { workspace = true }
-once_cell = { workspace = true }
+serde.workspace = true
+chrono.workspace = true
+once_cell.workspace = true
 
 clap = { version = "4", features = ["derive", "env", "cargo", "string"] }
 strum = "0.27"

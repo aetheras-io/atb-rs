@@ -1,7 +1,7 @@
 [workspace.package]
 description = "A Tool Box"
 authors = ["Denis Tsai <denistsai@aetheras.io"]
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 repository = "https://github.com/aetheras-io/atb-rs"
 
@@ -14,6 +14,7 @@ members = [
   "utils/build",
   "utils/cli",
   "utils/fixtures",
+  "utils/ai",
 ]
 
 [workspace.dependencies]
@@ -67,12 +68,12 @@ chrono = { workspace = true }
 rand = { workspace = true }
 
 # Eventsourcing
-lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.14.0", optional = true }
-lucidstream-ges = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v0.14.0", optional = true }
+lucidstream = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v1.0.0", optional = true }
+lucidstream-pg = { git = "https://github.com/dt665m/lucidstream-rs.git", tag = "v1.0.0", optional = true }
 
 # Nothing by default
 [features]
 default = []
 all = ["eventsourcing", "fixtures"]
-eventsourcing = ["lucidstream", "lucidstream-ges"]
+eventsourcing = ["lucidstream", "lucidstream-pg"]
 fixtures = ["atb-fixtures-utils/jwt"]

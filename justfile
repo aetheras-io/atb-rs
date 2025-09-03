@@ -20,6 +20,7 @@ build:
 	(cd ext/tokio && cargo build)
 	(cd ext/serde && cargo build)
 	(cd utils/cli && cargo build)
+	(cd utils/ai && cargo build)
 	(cd utils/fixtures && cargo build)
 	(cd utils/fixtures && cargo build --features jwt) && cargo clippy --all
 

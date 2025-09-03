@@ -8,9 +8,9 @@ repository.workspace = true
 [dependencies]
 atb = { path = "../../" }
 
-log = { workspace = true }
-anyhow = { workspace = true }
-futures = { workspace = true }
+log.workspace = true
+anyhow.workspace = true
+futures.workspace = true
 
 tokio = { version = "1", features = [
   "signal",

@@ -1,0 +1,23 @@
+[package]
+name = "ai"
+description.workspace = true
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+atb-types = { version = "1.1.0", path = "../../types" }
+
+futures.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+
+tokio = "1.47.1"
+reqwest = { version = "0.12.23", features = ["json", "stream", "rustls-tls"] }
+derive_builder = "0.20.2"
+eventsource-stream = "0.2.3"
+tokio-stream = "0.1.17"

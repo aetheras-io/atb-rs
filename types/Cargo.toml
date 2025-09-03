@@ -6,11 +6,11 @@ edition.workspace = true
 repository.workspace = true
 
 [dependencies]
-thiserror = { workspace = true }
-uuid = { workspace = true }
-chrono = { workspace = true }
-rand = { workspace = true }
-once_cell = { workspace = true }
+thiserror.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+rand.workspace = true
+once_cell.workspace = true
 jsonwebtoken = { workspace = true, optional = true }
 
 sha2 = { version = "0.10", default-features = false }
