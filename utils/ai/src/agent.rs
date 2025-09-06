@@ -8,7 +8,7 @@ use crate::openai::{
 };
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use atb_types::Uuid;
 use eventsource_stream::{Event as SseEvent, Eventsource};
@@ -125,18 +125,18 @@ impl Agent {
     }
 
     /// Create a fresh AgentContext seeded with the system prompt and optional user data.
-    pub fn seed_context(&self) -> Arc<Mutex<AgentContext>> {
+    pub fn seed_context(&self) -> AgentContext {
         let mut conversation_start =
             vec![(MessageRole::Developer, self.system_prompt.to_owned()).into()];
         if let Some(ref data) = self.user_data {
             conversation_start.push((MessageRole::Developer, data.clone()).into());
         }
         let baseline_len = conversation_start.len();
-        Arc::new(Mutex::new(AgentContext {
+        AgentContext {
             conversation: conversation_start,
             tool_results: vec![],
             baseline_len,
-        }))
+        }
     }
 
     /// Returns a reference to the immutable run_id for this agent.
