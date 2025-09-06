@@ -1,5 +1,5 @@
 [package]
-name = "ai"
+name = "atb-ai-utils"
 description.workspace = true
 authors.workspace = true
 version.workspace = true
@@ -7,7 +7,7 @@ edition.workspace = true
 repository.workspace = true
 
 [dependencies]
-atb-types = { version = "1.1.0", path = "../../types" }
+atb-types = { path = "../../types" }
 
 futures.workspace = true
 serde.workspace = true
