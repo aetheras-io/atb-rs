@@ -1,8 +1,8 @@
 use crate::openai::{
     self, CustomClient, GPT4_O,
     responses::{
-        FunctionTool, FunctionToolCall, InputFunctionCallOutput, InputItem, InputMessage,
-        MessageRole, OutputItem, RequestPayloadBuilder, ToolChoice, ToolChoiceOption,
+        FunctionTool, FunctionToolCall, Includable, InputFunctionCallOutput, InputItem,
+        InputMessage, MessageRole, OutputItem, RequestPayloadBuilder, ToolChoice, ToolChoiceOption,
         streaming::ResponseStreamEvent,
     },
 };
@@ -318,6 +318,8 @@ impl Agent {
     ) -> Result<Vec<FunctionToolCall>, AgentError> {
         let conversation = ctx.history().to_vec();
         let req = RequestPayloadBuilder::default()
+            .store(false)
+            .include(vec![Includable::ReasoningEncryptedContent])
             .model(self.model.clone())
             .input(conversation.into())
             .stream(true)
@@ -393,6 +395,8 @@ impl Agent {
     async fn run_once(&self, ctx: &mut AgentContext) -> Result<Vec<FunctionToolCall>, AgentError> {
         let conversation = ctx.history().to_vec();
         let req = RequestPayloadBuilder::default()
+            .store(false)
+            .include(vec![Includable::ReasoningEncryptedContent])
             .model(self.model.clone())
             .input(conversation.into())
             .stream(false)
