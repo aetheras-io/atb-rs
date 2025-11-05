@@ -4,6 +4,7 @@ use crate::openai::{
         FunctionTool, FunctionToolCall, Includable, InputFunctionCallOutput, InputItem,
         InputMessage, MessageRole, OutputItem, RequestPayloadBuilder, ToolChoice, ToolChoiceOption,
         streaming::ResponseStreamEvent,
+        ReasoningConfig, ReasoningEffortConfig,
     },
 };
 
@@ -325,6 +326,7 @@ impl Agent {
             .stream(true)
             .tools(self.tools.iter().cloned().map(Into::into).collect())
             .tool_choice(ToolChoice::Option(ToolChoiceOption::Auto))
+            .reasoning(ReasoningConfig::Effort(ReasoningEffortConfig::Minimal))
             .build()
             .expect("builder builds. qed");
 

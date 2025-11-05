@@ -148,7 +148,7 @@ pub mod responses {
 
         /// Configuration options for reasoning models.
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub reasoning: Option<Reasoning>,
+        pub reasoning: Option<ReasoningConfig>,
 
         /// Specifies the latency tier to use.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -220,6 +220,30 @@ pub mod responses {
                 user: None,
             }
         }
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+    #[serde(rename_all = "snake_case")]
+    pub enum ReasoningConfig {
+        Effort(ReasoningEffortConfig),
+        Summary(ReasoningSummaryConfig),
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+    #[serde(rename_all = "snake_case")]
+    pub enum ReasoningEffortConfig {
+        Minimal,
+        Low, 
+        Medium,
+        High,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+    #[serde(rename_all = "snake_case")]
+    pub enum ReasoningSummaryConfig {
+        Auto, 
+        Concise,
+        Detailed,
     }
 
     #[derive(Deserialize, Clone, Debug)]
@@ -934,7 +958,6 @@ pub mod responses {
     }
 
     // --- Tool Definitions ---
-
     /// Ranking options for search.
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
     pub struct FileSearchRankingOptions {
