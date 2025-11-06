@@ -352,7 +352,6 @@ impl Agent {
 
         let mut tool_calls = vec![];
         while let Some(evt) = stream.try_next().await? {
-            tracing::info!("evt: {:?}", evt);
             match serde_json::from_str::<ResponseStreamEvent>(&evt.data).unwrap() {
                 ResponseStreamEvent::OutputTextDelta(_) => {
                     let _ = tx.send(Ok(evt));
