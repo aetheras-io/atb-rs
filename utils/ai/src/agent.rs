@@ -443,6 +443,9 @@ impl Agent {
                 OutputItem::FileSearchCall(_) => {
                     // Currently ignored for non-streaming mode; nothing to add to context
                 }
+                OutputItem::Reasoning(_) => {
+                    // Do nothing for now
+                }
             }
         }
 

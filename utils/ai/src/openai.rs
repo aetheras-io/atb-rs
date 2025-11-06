@@ -478,6 +478,7 @@ pub mod responses {
         FunctionCall(FunctionToolCall),
         Message(OutputMessage),
         FileSearchCall(FileSearchToolCall),
+        Reasoning(ReasoningItem)
     }
 
     // --- Input Types ---
