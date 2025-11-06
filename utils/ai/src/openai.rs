@@ -223,10 +223,11 @@ pub mod responses {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-    #[serde(rename_all = "snake_case")]
-    pub enum ReasoningConfig {
-        Effort(ReasoningEffortConfig),
-        Summary(ReasoningSummaryConfig),
+    pub struct ReasoningConfig {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub effort: Option<ReasoningEffortConfig>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub summary: Option<ReasoningSummaryConfig>,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -273,7 +274,7 @@ pub mod responses {
         #[serde(default)]
         pub previous_response_id: Option<String>,
         #[serde(default)]
-        pub reasoning: Option<Reasoning>, // Use Reasoning from parent
+        pub reasoning: Option<ReasoningConfig>, // Use Reasoning from parent
         #[serde(default)]
         pub service_tier: Option<String>, // Present in initial event, might differ in final? Keep optional.
         #[serde(default)]
@@ -1130,7 +1131,7 @@ pub mod responses {
 
     /// Placeholder for Shared.Reasoning if definition is unknown
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
-    pub struct Reasoning {}
+    pub struct _Reasoning {}
 
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
     pub struct Usage {
