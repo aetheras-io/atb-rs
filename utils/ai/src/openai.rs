@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 pub const TEXT_EMBEDDING_3_SMALL: &str = "text-embedding-3-small";
 pub const GPT4_O: &str = "gpt-4o";
 pub const GPT4_O_MINI: &str = "gpt-4o-mini";
+//#NOTE GPT 5 stuff, reasoning models
+pub const GPT5: &str = "gpt-5";
+pub const GPT5_MINI: &str = "gpt-5-mini";
 pub const API_URL_V1: &str = "https://api.openai.com/v1";
 
 #[derive(Serialize)]
