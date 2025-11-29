@@ -16,9 +16,9 @@ serde_json.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
 
-tokio = "1.47.1"
-reqwest = { version = "0.12.23", features = ["json", "stream", "rustls-tls"] }
-derive_builder = "0.20.2"
+tokio = "1"
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+derive_builder = "0.20"
 eventsource-stream = "0.2.3"
-tokio-stream = "0.1.17"
+tokio-stream = "0.1"
 async-stream = "0.3"

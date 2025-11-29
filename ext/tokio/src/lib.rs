@@ -102,19 +102,9 @@ impl TaskService {
         })
     }
 
-    // Run will run until all tasks complete.  If the shutdown_complete_handle is taken, it is the
-    // calling scope's responsibility to wait until all tasks complete.  For example:
-    // ```rs
-    // fn main() {
-    //  //setup
-    //  let services_complete = service.take_completion_handle();
-    //  runtime.spawn(service.run(tokio::signal::ctrl_c()));
-    //  // ..other stuff
-    //  runtime.block_on(services_complete);
-    // }
-    //
-    // ```
-    // Runtime.block_on(service.run_to_completion()) is the last call
+    // Run will run until all tasks complete. If `take_completion_handle` is used,
+    // the returned future can be awaited from a different context, but `run` will
+    // still wait for each task to finish before returning.
     pub async fn run(self, shutdown: impl Future) {
         let Self {
             tokio_tasks,
@@ -123,47 +113,63 @@ impl TaskService {
             shutdown_complete_rx,
         } = self;
 
-        let start = async move {
-            let mut handles = Vec::new();
-            for task in tokio_tasks.into_iter() {
-                handles.push(tokio::spawn(task(
-                    Shutdown::new(notify_shutdown.subscribe()),
-                    shutdown_complete_tx.clone(),
-                )));
-            }
+        let mut handles = Vec::new();
+        for task in tokio_tasks.into_iter() {
+            handles.push(tokio::spawn(task(
+                Shutdown::new(notify_shutdown.subscribe()),
+                shutdown_complete_tx.clone(),
+            )));
+        }
 
-            futures::future::join_all(handles).await;
-        };
+        drop(shutdown_complete_tx);
+
+        let join_all = futures::future::join_all(handles);
+        tokio::pin!(join_all);
+
+        let mut join_results = None;
 
         log::info!("TaskService started");
-        tokio::select! {
-            _ = start => {}
+        let shutdown_triggered = tokio::select! {
+            res = &mut join_all => {
+                join_results = Some(res);
+                false
+            }
             _ = shutdown => {
                 log::warn!("TaskService shutting down");
+                true
+            }
+        };
+        log::info!("TaskService stopped");
+
+        if shutdown_triggered {
+            if let Err(err) = notify_shutdown.send(()) {
+                log::debug!("TaskService shutdown broadcast had no active listeners: {err}");
+            }
+
+            let res = join_all.await;
+            join_results = Some(res);
+        }
+
+        if let Some(results) = join_results {
+            for result in results {
+                if let Err(err) = result {
+                    if err.is_panic() {
+                        log::error!("TaskService task panicked during shutdown: {err}");
+                    } else if err.is_cancelled() {
+                        log::warn!("TaskService task was cancelled during shutdown");
+                    }
+                }
             }
         }
-        log::info!("TaskService stopped");
 
         if let Some(mut rx) = shutdown_complete_rx {
             let _ = rx.recv().await;
             log::info!("TaskService shutdown completed");
         }
 
-        // #NOTE `self.notify_shutdown` is now dropped, `notify_shutdown` will now fire to all
-        // spawned tasks indefinitely.  This in turn should break the task loops and drop the
-        // clones of `shutdown_complete_tx`.  Now the outer thread / caller will be waiting
-        // gracefully on the `shutdown_complete_rx` for all tasks to finish
-        //
-        // The following "signaling" happens:
-        // let TaskService {
-        //     tokio_tasks,
-        //     notify_shutdown,
-        //     shutdown_complete_tx,
-        // } = self;
-        // drop(tokio_tasks);
-        // drop(notify_shutdown);
-        // drop(shutdown_complete_tx);
-        // drop(shutdown_complete_rx);
+        // Dropping `notify_shutdown` after the explicit send ensures every subscriber sees the
+        // shutdown signal, which allows each task to break its loop and drop its clone of
+        // `shutdown_complete_tx`. Once all senders are gone, the completion receiver resolves.
     }
 }
 
@@ -173,23 +179,30 @@ impl Default for TaskService {
     }
 }
 
-pub async fn retry_future<Factory, Fut, F, O, E>(f: Factory, retryable: F, max_attempts: u64) -> O
+pub async fn retry_future<Factory, Fut, F, O, E>(
+    f: Factory,
+    retryable: F,
+    max_attempts: u64,
+) -> Result<O, E>
 where
     Factory: Fn() -> Fut,
     Fut: Future<Output = Result<O, E>>,
     F: Fn(&E) -> bool,
 {
     let mut attempts = 0;
+
     loop {
         match f().await {
-            Ok(o) => return o,
+            Ok(o) => return Ok(o),
             Err(e) => {
-                if attempts <= max_attempts && retryable(&e) {
+                if attempts < max_attempts && retryable(&e) {
                     attempts += 1;
                     let backoff = exponential_backoff_ms(attempts, DEFAULT_MAX_BACKOFF_MS);
                     sleep(Duration::from_millis(backoff)).await;
                     continue;
                 }
+
+                return Err(e);
             }
         }
     }
@@ -278,5 +291,401 @@ pub mod stream {
             }
             log::info!("StreamReactor stopped")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use anyhow::anyhow;
+    use futures::{Sink, Stream};
+    use crate::stream::StreamProcessor;
+    use std::{
+        collections::VecDeque,
+        fmt,
+        pin::Pin,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc, Mutex,
+        },
+        task::{Context, Poll},
+    };
+    use tokio::{
+        sync::{broadcast, mpsc, oneshot, Notify},
+        time::{sleep, timeout, Duration, Instant},
+    };
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct TestError {
+        attempt: usize,
+        kind: &'static str,
+    }
+
+    impl fmt::Display for TestError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{} attempt {}", self.kind, self.attempt)
+        }
+    }
+
+    impl std::error::Error for TestError {}
+
+    #[derive(Debug, Clone)]
+    struct TestStreamError;
+
+    impl fmt::Display for TestStreamError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "test stream error")
+        }
+    }
+
+    impl std::error::Error for TestStreamError {}
+
+    struct TestStream {
+        items: VecDeque<Result<u8, TestStreamError>>,
+    }
+
+    impl TestStream {
+        fn new(items: Vec<Result<u8, TestStreamError>>) -> Self {
+            Self {
+                items: VecDeque::from(items),
+            }
+        }
+    }
+
+    impl Stream for TestStream {
+        type Item = Result<u8, TestStreamError>;
+
+        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.get_mut();
+            Poll::Ready(this.items.pop_front())
+        }
+    }
+
+    impl Sink<u8> for TestStream {
+        type Error = TestStreamError;
+
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn start_send(self: Pin<&mut Self>, _item: u8) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    struct TestProcessor {
+        id: &'static str,
+        streams: Arc<Mutex<VecDeque<Vec<Result<u8, TestStreamError>>>>>,
+        process_results: Arc<Mutex<VecDeque<anyhow::Result<()>>>>,
+        connect_calls: Arc<AtomicUsize>,
+        processed: Arc<Mutex<Vec<u8>>>,
+        processed_notify: Arc<Notify>,
+    }
+
+    impl TestProcessor {
+        fn new(
+            id: &'static str,
+            streams: Vec<Vec<Result<u8, TestStreamError>>>,
+            process_results: Vec<anyhow::Result<()>>,
+            processed_notify: Arc<Notify>,
+        ) -> Self {
+            Self {
+                id,
+                streams: Arc::new(Mutex::new(VecDeque::from(streams))),
+                process_results: Arc::new(Mutex::new(VecDeque::from(process_results))),
+                connect_calls: Arc::new(AtomicUsize::new(0)),
+                processed: Arc::new(Mutex::new(Vec::new())),
+                processed_notify,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl StreamProcessor for TestProcessor {
+        type Stream = TestStream;
+        type Item = u8;
+        type Error = TestStreamError;
+
+        fn identifier(&self) -> &str {
+            self.id
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<Self::Stream> {
+            let maybe_stream = self.streams.lock().unwrap().pop_front();
+            match maybe_stream {
+                Some(items) => {
+                    self.connect_calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(TestStream::new(items))
+                }
+                None => Err(anyhow!("no more streams")),
+            }
+        }
+
+        async fn process(&mut self, message: Self::Item) -> anyhow::Result<()> {
+            self.processed.lock().unwrap().push(message);
+            self.processed_notify.notify_one();
+
+            if let Some(result) = self.process_results.lock().unwrap().pop_front() {
+                result
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn tasks_receive_shutdown_and_complete_gracefully() {
+        let mut service = TaskService::new();
+
+        let (task_ready_tx, task_ready_rx) = oneshot::channel();
+        let (shutdown_seen_tx, shutdown_seen_rx) = oneshot::channel();
+
+        service.add_task(move |mut shutdown, shutdown_complete| {
+            Box::pin(async move {
+                task_ready_tx.send(()).ok();
+                shutdown.recv().await;
+                shutdown_seen_tx.send(()).ok();
+                drop(shutdown_complete);
+            })
+        });
+
+        let completion = service.take_completion_handle();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+        let join_handle = tokio::spawn(service.run(async {
+            let _ = shutdown_rx.await;
+        }));
+
+        timeout(Duration::from_secs(1), task_ready_rx)
+            .await
+            .expect("task did not become ready")
+            .expect("task readiness channel closed unexpectedly");
+
+        shutdown_tx
+            .send(())
+            .expect("failed to trigger service shutdown");
+
+        timeout(Duration::from_secs(1), join_handle)
+            .await
+            .expect("service::run did not finish in time")
+            .expect("service::run join handle returned error");
+
+        timeout(Duration::from_secs(1), shutdown_seen_rx)
+            .await
+            .expect("task never observed shutdown signal")
+            .expect("shutdown observer channel closed before notification");
+
+        timeout(Duration::from_secs(1), completion)
+            .await
+            .expect("service completion handle did not resolve");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn run_waits_for_tasks_to_finish_after_shutdown() {
+        let mut service = TaskService::new();
+
+        service.add_task(|mut shutdown, shutdown_complete| {
+            Box::pin(async move {
+                shutdown.recv().await;
+                // simulate cleanup work that must finish before shutdown completes
+                sleep(Duration::from_millis(50)).await;
+                drop(shutdown_complete);
+            })
+        });
+
+        let completion = service.take_completion_handle();
+        drop(completion);
+
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+        let run_handle = tokio::spawn(service.run(async {
+            let _ = shutdown_rx.await;
+        }));
+
+        // give the task a moment to start
+        tokio::task::yield_now().await;
+
+        let start = Instant::now();
+        shutdown_tx
+            .send(())
+            .expect("failed to trigger service shutdown");
+
+        timeout(Duration::from_secs(1), run_handle)
+            .await
+            .expect("service::run did not finish in time")
+            .expect("service::run join handle returned error");
+
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(50),
+            "service::run returned before tasks completed cleanup: {elapsed:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn retry_future_succeeds_without_retry() {
+        let result = retry_future(
+            || async { Ok::<_, TestError>(123) },
+            |_err: &TestError| true,
+            3,
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 123);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn retry_future_retries_then_succeeds() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_factory = attempts.clone();
+
+        let result = retry_future(
+            move || {
+                let attempts_for_factory = attempts_for_factory.clone();
+                async move {
+                    let attempt = attempts_for_factory.fetch_add(1, Ordering::SeqCst) + 1;
+                    if attempt < 3 {
+                        Err(TestError {
+                            attempt,
+                            kind: "retryable",
+                        })
+                    } else {
+                        Ok::<_, TestError>("done")
+                    }
+                }
+            },
+            |err: &TestError| err.kind == "retryable",
+            5,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, "done");
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn retry_future_stops_on_non_retryable_error() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_factory = attempts.clone();
+
+        let result = retry_future(
+            move || {
+                let attempts_for_factory = attempts_for_factory.clone();
+                async move {
+                    let attempt = attempts_for_factory.fetch_add(1, Ordering::SeqCst) + 1;
+                    Err::<(), TestError>(TestError {
+                        attempt,
+                        kind: "fatal",
+                    })
+                }
+            },
+            |err: &TestError| err.kind == "retryable",
+            5,
+        )
+        .await;
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        let err = result.unwrap_err();
+        assert_eq!(err.kind, "fatal");
+        assert_eq!(err.attempt, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn retry_future_respects_max_attempts() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_factory = attempts.clone();
+
+        let err = retry_future(
+            move || {
+                let attempts_for_factory = attempts_for_factory.clone();
+                async move {
+                    let attempt = attempts_for_factory.fetch_add(1, Ordering::SeqCst) + 1;
+                    Err::<(), TestError>(TestError {
+                        attempt,
+                        kind: "retryable",
+                    })
+                }
+            },
+            |err: &TestError| err.kind == "retryable",
+            2,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        assert_eq!(err.kind, "retryable");
+        assert_eq!(err.attempt, 3);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stream_reactor_reconnects_after_processor_error() {
+        let notify = Arc::new(Notify::new());
+
+        let processor = TestProcessor::new(
+            "test",
+            vec![
+                vec![Ok(1)],
+                vec![Ok(2)],
+            ],
+            vec![
+                Err(anyhow!("boom")),
+                Ok(()),
+            ],
+            notify.clone(),
+        );
+
+        let connect_calls = processor.connect_calls.clone();
+        let processed = processor.processed.clone();
+
+        let reactor = stream::StreamReactor { processor };
+
+        let (shutdown_tx, _) = broadcast::channel(1);
+        let shutdown = Shutdown::new(shutdown_tx.subscribe());
+        let (complete_tx, _) = mpsc::channel(1);
+
+        let handle = tokio::spawn(async move {
+            reactor.run(shutdown, complete_tx).await;
+        });
+
+        notify.notified().await;
+        assert!(
+            connect_calls.load(Ordering::SeqCst) >= 1,
+            "expected at least one connection attempt"
+        );
+
+        notify.notified().await;
+        assert!(
+            connect_calls.load(Ordering::SeqCst) >= 2,
+            "expected reconnection after processor error"
+        );
+        assert_eq!(*processed.lock().unwrap(), vec![1, 2]);
+
+        shutdown_tx
+            .send(())
+            .expect("failed to send shutdown signal for stream reactor");
+
+        timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("stream reactor did not stop in time")
+            .expect("stream reactor task panicked");
     }
 }
