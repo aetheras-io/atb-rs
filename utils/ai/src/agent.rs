@@ -4,6 +4,7 @@ use crate::openai::{
         FunctionTool, FunctionToolCall, Includable, InputFunctionCallOutput, InputItem,
         InputMessage, MessageRole, OutputItem, RequestPayloadBuilder, ToolChoice, ToolChoiceOption,
         streaming::ResponseStreamEvent,
+        ReasoningConfig, ReasoningEffortConfig,
     },
 };
 
@@ -325,6 +326,10 @@ impl Agent {
             .stream(true)
             .tools(self.tools.iter().cloned().map(Into::into).collect())
             .tool_choice(ToolChoice::Option(ToolChoiceOption::Auto))
+            .reasoning(ReasoningConfig {
+                effort: Some(ReasoningEffortConfig::Minimal),
+                summary: None,
+            })
             .build()
             .expect("builder builds. qed");
 
@@ -440,6 +445,9 @@ impl Agent {
                 }
                 OutputItem::FileSearchCall(_) => {
                     // Currently ignored for non-streaming mode; nothing to add to context
+                }
+                OutputItem::Reasoning(_) => {
+                    // Do nothing for now
                 }
             }
         }

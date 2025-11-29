@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 pub const TEXT_EMBEDDING_3_SMALL: &str = "text-embedding-3-small";
 pub const GPT4_O: &str = "gpt-4o";
 pub const GPT4_O_MINI: &str = "gpt-4o-mini";
+//#NOTE GPT 5 stuff, reasoning models
+pub const GPT5: &str = "gpt-5";
+pub const GPT5_MINI: &str = "gpt-5-mini";
 pub const API_URL_V1: &str = "https://api.openai.com/v1";
 
 #[derive(Serialize)]
@@ -148,7 +151,7 @@ pub mod responses {
 
         /// Configuration options for reasoning models.
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub reasoning: Option<Reasoning>,
+        pub reasoning: Option<ReasoningConfig>,
 
         /// Specifies the latency tier to use.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -222,6 +225,31 @@ pub mod responses {
         }
     }
 
+    #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+    pub struct ReasoningConfig {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub effort: Option<ReasoningEffortConfig>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub summary: Option<ReasoningSummaryConfig>,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+    #[serde(rename_all = "snake_case")]
+    pub enum ReasoningEffortConfig {
+        Minimal,
+        Low, 
+        Medium,
+        High,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+    #[serde(rename_all = "snake_case")]
+    pub enum ReasoningSummaryConfig {
+        Auto, 
+        Concise,
+        Detailed,
+    }
+
     #[derive(Deserialize, Clone, Debug)]
     pub struct Error {
         pub code: String,
@@ -249,7 +277,7 @@ pub mod responses {
         #[serde(default)]
         pub previous_response_id: Option<String>,
         #[serde(default)]
-        pub reasoning: Option<Reasoning>, // Use Reasoning from parent
+        pub reasoning: Option<ReasoningConfig>, // Use Reasoning from parent
         #[serde(default)]
         pub service_tier: Option<String>, // Present in initial event, might differ in final? Keep optional.
         #[serde(default)]
@@ -454,6 +482,7 @@ pub mod responses {
         FunctionCall(FunctionToolCall),
         Message(OutputMessage),
         FileSearchCall(FileSearchToolCall),
+        Reasoning(ReasoningItem)
     }
 
     // --- Input Types ---
@@ -934,7 +963,6 @@ pub mod responses {
     }
 
     // --- Tool Definitions ---
-
     /// Ranking options for search.
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
     pub struct FileSearchRankingOptions {
@@ -1106,7 +1134,7 @@ pub mod responses {
 
     /// Placeholder for Shared.Reasoning if definition is unknown
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
-    pub struct Reasoning {}
+    pub struct _Reasoning {}
 
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
     pub struct Usage {
