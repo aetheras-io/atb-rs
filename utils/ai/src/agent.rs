@@ -2,9 +2,9 @@ use crate::openai::{
     self, CustomClient, GPT4_O,
     responses::{
         FunctionTool, FunctionToolCall, Includable, InputFunctionCallOutput, InputItem,
-        InputMessage, MessageRole, OutputItem, RequestPayloadBuilder, ToolChoice, ToolChoiceOption,
+        InputMessage, MessageRole, OutputItem, ReasoningConfig, ReasoningEffortConfig,
+        RequestPayloadBuilder, RequestPayloadBuilderError, ToolChoice, ToolChoiceOption,
         streaming::ResponseStreamEvent,
-        ReasoningConfig, ReasoningEffortConfig,
     },
 };
 
@@ -39,11 +39,18 @@ pub enum AgentError {
 
     #[error("Other Error: {0}")]
     Other(String),
+
+    #[error("Builder Error: {0}")]
+    RequestPayload(#[from] RequestPayloadBuilderError),
 }
 
 type ToolHandlerFn = dyn Fn(&FunctionToolCall) -> BoxFuture<'static, anyhow::Result<serde_json::Value>>
     + Send
     + Sync;
+
+/// User hook to tweak the request builder while still allowing the agent to reassert invariants.
+type RequestCustomizerFn =
+    dyn Fn(&mut RequestPayloadBuilder) -> &mut RequestPayloadBuilder + Send + Sync;
 
 /// A no-op tool handler that returns a default success JSON asynchronously.
 pub fn null_tool_handler(
@@ -103,6 +110,7 @@ pub struct Agent {
     max_turns: usize,
     tools: Vec<FunctionTool>,
     tool_handlers: HashMap<String, Arc<ToolHandlerFn>>,
+    request_customizer: Arc<RequestCustomizerFn>,
 }
 
 impl Agent {
@@ -122,6 +130,7 @@ impl Agent {
             max_turns: 10,
             tools: vec![],
             tool_handlers: HashMap::new(),
+            request_customizer: Arc::new(|b| b),
         }
     }
 
@@ -155,6 +164,15 @@ impl Agent {
     pub fn with_tool(mut self, tool: FunctionTool, handler: Arc<ToolHandlerFn>) -> Self {
         self.tool_handlers.insert(tool.name.clone(), handler);
         self.tools.push(tool);
+        self
+    }
+
+    /// Provide a hook to customize the request builder; invariants are re-applied after the hook runs.
+    pub fn with_request_customizer<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&mut RequestPayloadBuilder) -> &mut RequestPayloadBuilder + Send + Sync + 'static,
+    {
+        self.request_customizer = Arc::new(f);
         self
     }
 
@@ -318,7 +336,8 @@ impl Agent {
         tx: &mpsc::UnboundedSender<Result<SseEvent, AgentError>>,
     ) -> Result<Vec<FunctionToolCall>, AgentError> {
         let conversation = ctx.history().to_vec();
-        let req = RequestPayloadBuilder::default()
+        let mut builder = RequestPayloadBuilder::default();
+        builder
             .store(false)
             .include(vec![Includable::ReasoningEncryptedContent])
             .model(self.model.clone())
@@ -329,9 +348,15 @@ impl Agent {
             .reasoning(ReasoningConfig {
                 effort: Some(ReasoningEffortConfig::Minimal),
                 summary: None,
-            })
-            .build()
-            .expect("builder builds. qed");
+            });
+
+        // Apply caller hook, then re-assert agent-owned invariants.
+        let req = (self.request_customizer)(&mut builder)
+            .stream(true)
+            .model(self.model.clone())
+            .tools(self.tools.iter().cloned().map(Into::into).collect())
+            .include(vec![Includable::ReasoningEncryptedContent])
+            .build()?;
 
         let resp = self
             .client
@@ -399,16 +424,22 @@ impl Agent {
     /// and returns any function tool calls to execute. Returns empty when there are no tools.
     async fn run_once(&self, ctx: &mut AgentContext) -> Result<Vec<FunctionToolCall>, AgentError> {
         let conversation = ctx.history().to_vec();
-        let req = RequestPayloadBuilder::default()
+        let mut builder = RequestPayloadBuilder::default();
+        builder
             .store(false)
             .include(vec![Includable::ReasoningEncryptedContent])
             .model(self.model.clone())
             .input(conversation.into())
             .stream(false)
             .tools(self.tools.iter().cloned().map(Into::into).collect())
-            .tool_choice(ToolChoice::Option(ToolChoiceOption::Auto))
-            .build()
-            .expect("builder builds. qed");
+            .tool_choice(ToolChoice::Option(ToolChoiceOption::Auto));
+
+        let req = (self.request_customizer)(&mut builder)
+            .stream(false)
+            .model(self.model.clone())
+            .tools(self.tools.iter().cloned().map(Into::into).collect())
+            .include(vec![Includable::ReasoningEncryptedContent])
+            .build()?;
 
         let resp = self
             .client
@@ -470,62 +501,6 @@ pub struct AgentRun {
 
 impl AgentRun {
     /// Consume this `AgentRun` and return its raw parts for manual composition.
-    ///
-    /// This lets callers build custom pipelines without exposing struct fields:
-    /// ```rust,no_run
-    /// use axum::response::sse::{Event, Sse};
-    /// use futures::StreamExt;
-    /// use anyhow::Result;
-    /// async fn handler(mut agent: Agent, ctx: AgentContext, user_input: String) -> Result<Sse<impl futures::Stream<Item = Result<Event, std::convert::Infallible>>>> {
-    ///     let run = agent.respond_stream(ctx, &user_input).await?;
-    ///     let (stream, handle) = run.into_parts();
-    ///     let stream = async_stream::stream! {
-    ///         while let Some(res) = stream.next().await {
-    ///             match res {
-    ///                 Ok(ev) => {
-    ///                     // Optionally record metrics/logging here before sending
-    ///                     yield Ok(Event::default().event(ev.event).data(ev.data));
-    ///                 }
-    ///                 Err(e) => {
-    ///                     // Convert internal error into an SSE error event
-    ///                     yield Ok(Event::default().event("error").data(e.to_string()));
-    ///                 }
-    ///             }
-    ///         }
-    ///         // Stream ended; now await the final context and use it
-    ///         match run.handle.await {
-    ///             Ok(final_ctx) => {
-    ///                 // e.g., persist final_ctx or update caches
-    ///                 let _ = final_ctx.history().len();
-    ///             }
-    ///             Err(join_err) => {
-    ///                 // Join error from background task
-    ///                 let _ = join_err.to_string();
-    ///             }
-    ///         }
-    ///     };
-    ///     Ok(Sse::new(stream))
-    /// }
-    /// ```
-    ///
-    /// ```rust,no_run
-    /// use axum::response::sse::{Event, Sse};
-    /// use futures::StreamExt;
-    /// # async fn route(run: AgentRun) -> Sse<impl futures::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    ///     let (stream, handle) = run.into_parts();
-    ///     let stream = async_stream::stream! {
-    ///         futures::pin_mut!(stream);
-    ///         while let Some(res) = stream.next().await {
-    ///             match res {
-    ///                 Ok(ev) => yield Ok(Event::default().event(ev.event).data(ev.data)),
-    ///                 Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
-    ///             }
-    ///         }
-    ///         let _ = handle.await; // await and optionally use the final AgentContext
-    ///     };
-    ///     Sse::new(stream)
-    /// }
-    /// ```
     pub fn into_parts(
         self,
     ) -> (
@@ -541,32 +516,6 @@ impl AgentRun {
     /// - Forwards every `Result<SseEvent, AgentError>` from the internal `stream`.
     /// - After the stream ends, awaits the `handle` for the final `AgentContext`.
     /// - Invokes the provided async `on_done` callback with the final context.
-    ///
-    /// Common use-case: finalize into an HTTP SSE stream while persisting the context at the end.
-    ///
-    /// Axum example returning `Sse<...>`:
-    ///
-    /// ```rust,no_run
-    /// use axum::response::sse::{Event, Sse};
-    /// use futures::StreamExt;
-    /// # use anyhow::Result;
-    /// # async fn save_ctx(_pool: &(), _ctx: &AgentContext) -> Result<(), ()> { Ok(()) }
-    /// # async fn route(mut agent: Agent, ctx: AgentContext, user_input: String, pool: ()) -> Result<Sse<impl futures::Stream<Item = Result<Event, std::convert::Infallible>>>> {
-    ///     let run = agent.respond_stream(ctx, &user_input).await?;
-    ///     let stream = run
-    ///         .finalize_with(move |final_ctx| {
-    ///             let pool = pool; // capture things by move
-    ///             async move {
-    ///                 let _ = save_ctx(&pool, &final_ctx).await;
-    ///             }
-    ///         })
-    ///         .map(|res| match res {
-    ///             Ok(ev) => Ok(Event::default().event(ev.event).data(ev.data)),
-    ///             Err(e) => Ok(Event::default().event("error").data(e.to_string())),
-    ///         });
-    ///     Ok(Sse::new(stream))
-    /// }
-    /// ```
     pub fn finalize_with<F, Fut>(
         self,
         on_done: F,
@@ -587,5 +536,65 @@ impl AgentRun {
                 Err(e) => tracing::error!("agent join error: {e}"),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::openai::responses::RequestPayload;
+
+    #[test]
+    fn customizer_cannot_override_agent_invariants() {
+        let run_id = Uuid::from_u128(0);
+
+        let tool = FunctionTool {
+            name: "demo_tool".to_string(),
+            parameters: None,
+            strict: None,
+            description: Some("demo".to_string()),
+        };
+
+        let agent = Agent::new(run_id, "test-key", "sys", None)
+            .with_model("agent-model")
+            .with_tool(tool, Arc::new(null_tool_handler))
+            .with_request_customizer(|b| {
+                // Caller tries to override invariants the agent owns.
+                b.stream(false)
+                    .model("caller-model")
+                    .tools(vec![])
+                    .include(vec![])
+            });
+
+        let mut builder = RequestPayloadBuilder::default();
+        builder
+            .store(false)
+            .include(vec![Includable::ReasoningEncryptedContent])
+            .model(agent.model.clone())
+            .stream(true)
+            .tools(agent.tools.iter().cloned().map(Into::into).collect())
+            .tool_choice(ToolChoice::Option(ToolChoiceOption::Auto))
+            .reasoning(ReasoningConfig {
+                effort: Some(ReasoningEffortConfig::Minimal),
+                summary: None,
+            });
+
+        let mut base = builder;
+        let req: RequestPayload = (agent.request_customizer)(&mut base)
+            // Agent re-applies invariants after the hook.
+            .stream(true)
+            .model(agent.model.clone())
+            .tools(agent.tools.iter().cloned().map(Into::into).collect())
+            .include(vec![Includable::ReasoningEncryptedContent])
+            .build()
+            .expect("builder builds");
+
+        assert_eq!(req.stream, Some(true));
+        assert_eq!(req.model, agent.model);
+        assert_eq!(req.tools.as_ref().map(|t| t.len()), Some(agent.tools.len()));
+        assert_eq!(
+            req.include,
+            Some(vec![Includable::ReasoningEncryptedContent])
+        );
     }
 }
