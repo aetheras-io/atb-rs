@@ -40,7 +40,7 @@ pub fn graphql_connection_derive(input: TokenStream) -> TokenStream {
             };
 
             quote! {
-                impl Cursor for #name {
+                impl ::atb_graphql_ext::Cursor for #name {
                     fn cursor(&self) -> String {
                         #to_string_expr
                     }
@@ -57,7 +57,7 @@ pub fn graphql_connection_derive(input: TokenStream) -> TokenStream {
     let connection_name = format_ident!("{}Connection", name);
 
     let expanded = quote! {
-        #[derive(SimpleObject)]
+        #[derive(::async_graphql::SimpleObject)]
         pub struct #edge_name {
             pub node: #name,
             pub cursor: String,
@@ -72,7 +72,7 @@ pub fn graphql_connection_derive(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl Cursor for #edge_name {
+        impl ::atb_graphql_ext::Cursor for #edge_name {
             fn cursor(&self) -> String {
                 self.cursor.clone()
             }
@@ -80,10 +80,10 @@ pub fn graphql_connection_derive(input: TokenStream) -> TokenStream {
 
         #cursor_impl
 
-        #[derive(SimpleObject)]
+        #[derive(::async_graphql::SimpleObject)]
         pub struct #connection_name {
             pub edges: Vec<#edge_name>,
-            pub page_info: PageInfo,
+            pub page_info: ::async_graphql::connection::PageInfo,
         }
     };
 

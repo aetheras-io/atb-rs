@@ -11,8 +11,8 @@ pub enum ActivityKind {
 impl ActivityKind {
     fn options_ty(&self) -> syn::Result<Type> {
         syn::parse_str(match self {
-            ActivityKind::Remote => "temporalio_sdk::ActivityOptions",
-            ActivityKind::Local => "temporalio_sdk::LocalActivityOptions",
+            ActivityKind::Remote => "::temporalio_sdk::ActivityOptions",
+            ActivityKind::Local => "::temporalio_sdk::LocalActivityOptions",
         })
     }
 
@@ -119,7 +119,7 @@ pub fn expand_activity(
     let struct_def = quote! {
         /// Builder for the `#fn_name` activity.
         pub struct #struct_name<'a> {
-            ctx: &'a temporalio_sdk::WfContext,
+            ctx: &'a ::temporalio_sdk::WfContext,
             options: #options_ty,
         }
     };
@@ -131,10 +131,10 @@ pub fn expand_activity(
         quote! {
             /// Internal constructor – prefer calling the generated `#fn_name` function.
             fn new(
-                ctx: &'a temporalio_sdk::WfContext,
+                ctx: &'a ::temporalio_sdk::WfContext,
                 request: &'a #req_ty,
             ) -> ::atb_temporal_ext::activities::ActivityResult<Self> {
-                use temporalio_common::protos::coresdk::AsJsonPayloadExt;
+                use ::temporalio_common::protos::coresdk::AsJsonPayloadExt;
                 let input = request
                     .as_json_payload()
                     .map_err(::atb_temporal_ext::activities::ActivityRunError::PayloadEncode)?;
@@ -154,7 +154,7 @@ pub fn expand_activity(
             ///
             /// This activity has no request payload, so we don't serialize any input.
             fn new(
-                ctx: &'a temporalio_sdk::WfContext,
+                ctx: &'a ::temporalio_sdk::WfContext,
             ) -> ::atb_temporal_ext::activities::ActivityResult<Self> {
                 Ok(Self {
                     ctx,
@@ -173,7 +173,7 @@ pub fn expand_activity(
             pub fn resolution(
                 self,
             ) -> impl std::future::Future<
-                Output = temporalio_common::protos::coresdk::activity_result::ActivityResolution
+                Output = ::temporalio_common::protos::coresdk::activity_result::ActivityResolution
             > + 'a {
                 async move {
                     let ctx = self.ctx;
@@ -200,7 +200,7 @@ pub fn expand_activity(
             pub fn resolution(
                 self,
             ) -> impl std::future::Future<
-                Output = temporalio_common::protos::coresdk::activity_result::ActivityResolution
+                Output = ::temporalio_common::protos::coresdk::activity_result::ActivityResolution
             > + 'a {
                 async move {
                     let ctx = self.ctx;
@@ -248,13 +248,13 @@ pub fn expand_activity(
         let req_ident = &req.binding_ident;
         let handler_ty = &req.handler_ty;
         quote! {
-            #ctx_ident: temporalio_sdk::ActContext,
+            #ctx_ident: ::temporalio_sdk::ActContext,
             #req_ident: #handler_ty
         }
     } else {
         let phantom_req = format_ident!("__bbc_activity_req");
         quote! {
-            #ctx_ident: temporalio_sdk::ActContext,
+            #ctx_ident: ::temporalio_sdk::ActContext,
             #phantom_req: ()
         }
     };
@@ -281,7 +281,7 @@ pub fn expand_activity(
             }
 
             /// Register this activity handler with a Temporal worker.
-            pub fn bind(worker: &mut temporalio_sdk::Worker) {
+            pub fn bind(worker: &mut ::temporalio_sdk::Worker) {
                 worker.register_activity(#act_id_literal, Self::handler);
             }
         }
@@ -293,7 +293,7 @@ pub fn expand_activity(
         let req_ty = &req.ty;
         quote! {
             #vis fn #fn_name<'a>(
-                ctx: &'a temporalio_sdk::WfContext,
+                ctx: &'a ::temporalio_sdk::WfContext,
                 request: &'a #req_ty,
             ) -> ::atb_temporal_ext::activities::ActivityResult<#struct_name<'a>> {
                 #struct_name::new(ctx, request)
@@ -302,7 +302,7 @@ pub fn expand_activity(
     } else {
         quote! {
             #vis fn #fn_name<'a>(
-                ctx: &'a temporalio_sdk::WfContext,
+                ctx: &'a ::temporalio_sdk::WfContext,
             ) -> ::atb_temporal_ext::activities::ActivityResult<#struct_name<'a>> {
                 #struct_name::new(ctx)
             }

@@ -8,3 +8,6 @@ repository.workspace = true
 
 [dependencies]
 atb-graphql-derive = { path = "./derive" }
+
+[dev-dependencies]
+async-graphql = { version = "7" }
