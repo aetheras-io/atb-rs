@@ -1,0 +1,19 @@
+[package]
+name = "atb-temporal-ext"
+description.workspace = true
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+atb-temporal-derive = { path = "./derive" }
+
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+prost-wkt-types = "0.7"
+temporalio-client = { git = "https://github.com/temporalio/sdk-core", rev = "87afc298ee7fd8c6172a0fe88ac7d723b474d996" }
+temporalio-common = { git = "https://github.com/temporalio/sdk-core", rev = "87afc298ee7fd8c6172a0fe88ac7d723b474d996" }
+temporalio-sdk = { git = "https://github.com/temporalio/sdk-core", rev = "87afc298ee7fd8c6172a0fe88ac7d723b474d996" }
+temporalio-sdk-core = { git = "https://github.com/temporalio/sdk-core", rev = "87afc298ee7fd8c6172a0fe88ac7d723b474d996" }

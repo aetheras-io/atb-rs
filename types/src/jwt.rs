@@ -4,10 +4,10 @@ use std::fmt::Display;
 
 use base64::prelude::*;
 use jsonwebtoken::{
-    self as jwt, crypto, errors::Error as JwtError, Algorithm, DecodingKey, EncodingKey, Header,
+    self as jwt, Algorithm, DecodingKey, EncodingKey, Header, crypto, errors::Error as JwtError,
 };
 use once_cell::sync::Lazy;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 
 pub use jsonwebtoken;

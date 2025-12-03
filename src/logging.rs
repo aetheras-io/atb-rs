@@ -7,7 +7,7 @@ pub fn init_tracer(filters: Option<&str>, is_dev: bool) {
 }
 
 pub fn try_init_tracer(filters: Option<&str>, is_dev: bool) -> anyhow::Result<()> {
-    use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
+    use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 
     // Prefer explicit filters; fall back to RUST_LOG or defaults.
     let env_filter = if let Some(f) = filters {
@@ -59,7 +59,7 @@ pub fn try_init_tracer(filters: Option<&str>, is_dev: bool) -> anyhow::Result<()
 use tracing_appender::non_blocking;
 pub fn try_init_file_tracer() -> anyhow::Result<non_blocking::WorkerGuard> {
     use tracing_appender::rolling;
-    use tracing_subscriber::{fmt, layer::SubscriberExt, Registry};
+    use tracing_subscriber::{Registry, fmt, layer::SubscriberExt};
 
     // Daily rotation: target/logs/app.log.YYYY-MM-DD
     let file_appender = rolling::daily("./target/logs", "app.log");

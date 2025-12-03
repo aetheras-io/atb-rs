@@ -4,7 +4,7 @@ use atb::helpers::exponential_backoff_ms;
 use futures::future::BoxFuture;
 use tokio::{
     sync::{broadcast, mpsc},
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 
 pub const DEFAULT_MAX_BACKOFF_MS: u64 = 32000;
@@ -297,23 +297,23 @@ pub mod stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use anyhow::anyhow;
-    use futures::{Sink, Stream};
     use crate::stream::StreamProcessor;
+    use anyhow::anyhow;
+    use async_trait::async_trait;
+    use futures::{Sink, Stream};
     use std::{
         collections::VecDeque,
         fmt,
         pin::Pin,
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
         },
         task::{Context, Poll},
     };
     use tokio::{
-        sync::{broadcast, mpsc, oneshot, Notify},
-        time::{sleep, timeout, Duration, Instant},
+        sync::{Notify, broadcast, mpsc, oneshot},
+        time::{Duration, Instant, sleep, timeout},
     };
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -642,14 +642,8 @@ mod tests {
 
         let processor = TestProcessor::new(
             "test",
-            vec![
-                vec![Ok(1)],
-                vec![Ok(2)],
-            ],
-            vec![
-                Err(anyhow!("boom")),
-                Ok(()),
-            ],
+            vec![vec![Ok(1)], vec![Ok(2)]],
+            vec![Err(anyhow!("boom")), Ok(())],
             notify.clone(),
         );
 

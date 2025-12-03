@@ -1,0 +1,16 @@
+[package]
+name = "atb-temporal-derive"
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+doctest = false
+
+[dependencies]
+quote = "1"
+proc-macro2 = "1"
+syn = { version = "2", features = ["full"] }
+heck = "0.5"

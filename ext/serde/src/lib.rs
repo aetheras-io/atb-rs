@@ -49,7 +49,7 @@ pub mod empty_string_none {
 pub mod bytes_as_base64 {
     use super::*;
     // use base64::prelude::*;
-    use base64::prelude::{Engine as _, BASE64_STANDARD};
+    use base64::prelude::{BASE64_STANDARD, Engine as _};
 
     pub fn serialize<T, S>(bytes: &T, se: S) -> Result<S::Ok, S::Error>
     where

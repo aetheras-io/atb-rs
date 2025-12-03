@@ -237,7 +237,7 @@ pub mod responses {
     #[serde(rename_all = "snake_case")]
     pub enum ReasoningEffortConfig {
         Minimal,
-        Low, 
+        Low,
         Medium,
         High,
     }
@@ -245,7 +245,7 @@ pub mod responses {
     #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
     #[serde(rename_all = "snake_case")]
     pub enum ReasoningSummaryConfig {
-        Auto, 
+        Auto,
         Concise,
         Detailed,
     }
@@ -482,7 +482,7 @@ pub mod responses {
         FunctionCall(FunctionToolCall),
         Message(OutputMessage),
         FileSearchCall(FileSearchToolCall),
-        Reasoning(ReasoningItem)
+        Reasoning(ReasoningItem),
     }
 
     // --- Input Types ---
