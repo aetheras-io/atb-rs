@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tracing_appender::{
     non_blocking::{NonBlocking, NonBlockingBuilder, WorkerGuard},
-    rolling::Rotation,
+    rolling::{RollingFileAppender, Rotation},
 };
 use tracing_subscriber::{
     EnvFilter, Registry,
@@ -22,6 +22,18 @@ pub struct TraceOpts {
     pub file: Option<FileSinkOpts>,
 }
 
+impl Default for TraceOpts {
+    fn default() -> Self {
+        Self {
+            filters: None,
+            buffer: 20_000,
+            lossy: false,
+            json: false,
+            file: None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct FileSinkOpts {
     pub directory: PathBuf,
@@ -39,20 +51,7 @@ impl Default for FileSinkOpts {
     }
 }
 
-impl Default for TraceOpts {
-    fn default() -> Self {
-        Self {
-            filters: None,
-            buffer: 20_000,
-            lossy: false,
-            json: false,
-            file: None,
-        }
-    }
-}
-
-/// Easiest path: dev/prod aware, non-blocking stdout, JSON in prod, pretty in dev.
-/// Uses 20k buffer, non-lossy; returns WorkerGuard if we successfully became global.
+/// use TraceOpts::default() for basic console noisy tracing
 pub fn init_tracer(opts: TraceOpts) -> anyhow::Result<WorkerGuard> {
     let (writer, guard) = build_nonblocking(&opts);
     let env_filter = opts
@@ -63,13 +62,13 @@ pub fn init_tracer(opts: TraceOpts) -> anyhow::Result<WorkerGuard> {
 
     if opts.json {
         let subscriber = Registry::default()
-            .with(loud_layer_json().with_writer(writer))
+            .with(noisy_layer_json().with_writer(writer))
             .with(env_filter);
         tracing::subscriber::set_global_default(subscriber)?;
     } else {
         let subscriber = Registry::default()
             .with(
-                loud_pretty_layer()
+                noisy_pretty_layer()
                     .with_ansi(opts.file.is_none()) // stdout keeps color; files disable below
                     .with_writer(writer),
             )
@@ -88,9 +87,9 @@ pub fn init_file_tracer() -> anyhow::Result<WorkerGuard> {
     })
 }
 
-// Loud pretty (text) formatter.
+// noisy pretty (text) formatter.
 // Concrete type: FmtLayer<Registry, DefaultFields, Format<Full, SystemTime>, fn() -> Stdout>
-pub fn loud_pretty_layer() -> FmtLayer<Registry> {
+pub fn noisy_pretty_layer() -> FmtLayer<Registry> {
     fmt::layer()
         .with_span_events(format::FmtSpan::CLOSE)
         .with_target(true)
@@ -101,8 +100,7 @@ pub fn loud_pretty_layer() -> FmtLayer<Registry> {
         .with_thread_names(true)
 }
 
-/// JSON / prod formatter
-pub fn loud_layer_json() -> FmtLayer<Registry, format::JsonFields, format::Format<format::Json>> {
+pub fn noisy_layer_json() -> FmtLayer<Registry, format::JsonFields, format::Format<format::Json>> {
     fmt::layer()
         .json()
         .with_current_span(true)
@@ -117,25 +115,17 @@ pub fn loud_layer_json() -> FmtLayer<Registry, format::JsonFields, format::Forma
         .flatten_event(true)
 }
 
-/// Build writer + guard + EnvFilter in one place so stdout/file paths stay aligned.
 /// Build a non-blocking writer (stdout or rolling file) based on TraceOpts.
 pub fn build_nonblocking(opts: &TraceOpts) -> (NonBlocking, WorkerGuard) {
     let builder = NonBlockingBuilder::default()
         .buffered_lines_limit(opts.buffer)
         .lossy(opts.lossy);
     if let Some(file) = &opts.file {
-        let dir = file.directory.clone();
-        let _ = std::fs::create_dir_all(&dir);
-
-        let file_name = file.file_name.clone();
-        let file_appender = match file.rotation {
-            Rotation::NEVER => tracing_appender::rolling::never(&dir, file_name),
-            Rotation::HOURLY => tracing_appender::rolling::hourly(&dir, file_name),
-            Rotation::DAILY => tracing_appender::rolling::daily(&dir, file_name),
-            Rotation::MINUTELY => tracing_appender::rolling::minutely(&dir, file_name),
-        };
-
-        builder.finish(file_appender)
+        builder.finish(RollingFileAppender::new(
+            file.rotation.clone(),
+            &file.directory,
+            &file.file_name,
+        ))
     } else {
         builder.finish(std::io::stdout())
     }
