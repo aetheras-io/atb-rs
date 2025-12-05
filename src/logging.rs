@@ -52,13 +52,16 @@ impl Default for FileSinkOpts {
 }
 
 /// use TraceOpts::default() for basic console noisy tracing
+#[must_use = "keep the returned WorkerGuard alive or logs may be dropped"]
 pub fn init_tracer(opts: TraceOpts) -> anyhow::Result<WorkerGuard> {
     let (writer, guard) = build_nonblocking(&opts);
     let env_filter = opts
         .filters
         .as_ref()
         .map(|f| EnvFilter::builder().parse_lossy(f))
-        .unwrap_or_else(EnvFilter::from_default_env);
+        .unwrap_or_else(|| {
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
+        });
 
     if opts.json {
         let subscriber = Registry::default()
@@ -79,12 +82,29 @@ pub fn init_tracer(opts: TraceOpts) -> anyhow::Result<WorkerGuard> {
 }
 
 /// Backwards compatibility shim: file logger with defaults.
+#[must_use = "keep the returned WorkerGuard alive or logs may be dropped"]
 pub fn init_file_tracer() -> anyhow::Result<WorkerGuard> {
     init_tracer(TraceOpts {
         file: Some(FileSinkOpts::default()),
         json: true,
         ..Default::default()
     })
+}
+
+/// Build a non-blocking writer (stdout or rolling file) based on TraceOpts.
+pub fn build_nonblocking(opts: &TraceOpts) -> (NonBlocking, WorkerGuard) {
+    let builder = NonBlockingBuilder::default()
+        .buffered_lines_limit(opts.buffer)
+        .lossy(opts.lossy);
+    if let Some(file) = &opts.file {
+        builder.finish(RollingFileAppender::new(
+            file.rotation.clone(),
+            &file.directory,
+            &file.file_name,
+        ))
+    } else {
+        builder.finish(std::io::stdout())
+    }
 }
 
 // noisy pretty (text) formatter.
@@ -113,22 +133,6 @@ pub fn noisy_layer_json() -> FmtLayer<Registry, format::JsonFields, format::Form
         .with_thread_names(true)
         .with_ansi(false)
         .flatten_event(true)
-}
-
-/// Build a non-blocking writer (stdout or rolling file) based on TraceOpts.
-pub fn build_nonblocking(opts: &TraceOpts) -> (NonBlocking, WorkerGuard) {
-    let builder = NonBlockingBuilder::default()
-        .buffered_lines_limit(opts.buffer)
-        .lossy(opts.lossy);
-    if let Some(file) = &opts.file {
-        builder.finish(RollingFileAppender::new(
-            file.rotation.clone(),
-            &file.directory,
-            &file.file_name,
-        ))
-    } else {
-        builder.finish(std::io::stdout())
-    }
 }
 
 #[deprecated(note = "use init_tracer, this will be removed soon")]
