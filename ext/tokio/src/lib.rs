@@ -3,6 +3,7 @@ use std::future::Future;
 use atb::helpers::exponential_backoff_ms;
 use futures::future::BoxFuture;
 use tokio::{
+    signal,
     sync::{broadcast, mpsc},
     time::{Duration, sleep},
 };
@@ -176,6 +177,30 @@ impl TaskService {
 impl Default for TaskService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
     }
 }
 

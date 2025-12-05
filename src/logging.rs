@@ -1,80 +1,112 @@
-// Backward-compatible wrapper: initialize tracing, ignoring errors if already set.
-pub fn init_tracer(filters: Option<&str>, is_dev: bool) {
-    if let Err(e) = try_init_tracer(filters, is_dev) {
-        // keep noise minimal; many apps init their own global subscriber
-        log::trace!("init_tracer skipped: {}", e);
+use std::path::PathBuf;
+
+use tracing_appender::{
+    non_blocking::{NonBlocking, NonBlockingBuilder, WorkerGuard},
+    rolling::Rotation,
+};
+use tracing_subscriber::{
+    EnvFilter, Registry,
+    fmt::{self, Layer as FmtLayer, format},
+    layer::SubscriberExt,
+};
+
+pub use tracing_appender;
+pub use tracing_subscriber;
+
+pub struct TraceOpts {
+    pub filters: Option<String>,
+    pub buffer: usize,
+    pub lossy: bool,
+    pub json: bool,
+    /// When present, logs are written to a rolling file instead of stdout.
+    pub file: Option<FileSinkOpts>,
+}
+
+#[derive(Clone)]
+pub struct FileSinkOpts {
+    pub directory: PathBuf,
+    pub file_name: String,
+    pub rotation: Rotation,
+}
+
+impl Default for FileSinkOpts {
+    fn default() -> Self {
+        Self {
+            directory: PathBuf::from("./target/logs"),
+            file_name: "app.log".to_string(),
+            rotation: Rotation::DAILY,
+        }
     }
 }
 
-pub fn try_init_tracer(filters: Option<&str>, is_dev: bool) -> anyhow::Result<()> {
-    use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
-
-    // Prefer explicit filters; fall back to RUST_LOG or defaults.
-    let env_filter = if let Some(f) = filters {
-        EnvFilter::builder().parse_lossy(f)
-    } else {
-        EnvFilter::from_default_env()
-    };
-
-    // Bridge `log` macros into `tracing` so crates using `log` are captured.
-    // Ignore error if a logger is already set by the application.
-    let _ = tracing_log::LogTracer::init();
-
-    if is_dev {
-        // Human-friendly console logs for local development.
-        let fmt_layer = fmt::layer()
-            .with_target(true)
-            .with_thread_ids(true)
-            .with_thread_names(true)
-            .with_line_number(true)
-            .with_file(true)
-            .with_ansi(true)
-            .with_span_events(fmt::format::FmtSpan::CLOSE);
-
-        let subscriber = Registry::default().with(env_filter).with(fmt_layer);
-        tracing::subscriber::set_global_default(subscriber)
-            .map_err(|e| anyhow::anyhow!("failed to set tracing default subscriber: {e}"))?;
-    } else {
-        // Production: structured JSON logs (one JSON object per line).
-        let fmt_layer = fmt::layer()
-            .json()
-            .with_current_span(true)
-            .with_span_list(true)
-            .with_target(true)
-            .with_line_number(true)
-            .with_file(true)
-            .with_thread_ids(true)
-            .with_thread_names(true)
-            .with_ansi(false)
-            .flatten_event(true)
-            .with_span_events(fmt::format::FmtSpan::CLOSE);
-
-        let subscriber = Registry::default().with(env_filter).with(fmt_layer);
-        tracing::subscriber::set_global_default(subscriber)
-            .map_err(|e| anyhow::anyhow!("failed to set tracing default subscriber: {e}"))?;
+impl Default for TraceOpts {
+    fn default() -> Self {
+        Self {
+            filters: None,
+            buffer: 20_000,
+            lossy: false,
+            json: false,
+            file: None,
+        }
     }
-    Ok(())
 }
 
-use tracing_appender::non_blocking;
-pub fn try_init_file_tracer() -> anyhow::Result<non_blocking::WorkerGuard> {
-    use tracing_appender::rolling;
-    use tracing_subscriber::{Registry, fmt, layer::SubscriberExt};
+/// Easiest path: dev/prod aware, non-blocking stdout, JSON in prod, pretty in dev.
+/// Uses 20k buffer, non-lossy; returns WorkerGuard if we successfully became global.
+pub fn init_tracer(opts: TraceOpts) -> anyhow::Result<WorkerGuard> {
+    let (writer, guard) = build_nonblocking(&opts);
+    let env_filter = opts
+        .filters
+        .as_ref()
+        .map(|f| EnvFilter::builder().parse_lossy(f))
+        .unwrap_or_else(EnvFilter::from_default_env);
 
-    // Daily rotation: target/logs/app.log.YYYY-MM-DD
-    let file_appender = rolling::daily("./target/logs", "app.log");
-    let (non_blocking_writer, guard) = non_blocking(file_appender);
+    if opts.json {
+        let subscriber = Registry::default()
+            .with(loud_layer_json().with_writer(writer))
+            .with(env_filter);
+        tracing::subscriber::set_global_default(subscriber)?;
+    } else {
+        let subscriber = Registry::default()
+            .with(
+                loud_pretty_layer()
+                    .with_ansi(opts.file.is_none()) // stdout keeps color; files disable below
+                    .with_writer(writer),
+            )
+            .with(env_filter);
+        tracing::subscriber::set_global_default(subscriber)?;
+    }
+    Ok(guard)
+}
 
-    // Allow override for file log level via RUST_LOG_FILE; default to info.
-    let env_filter = std::env::var("RUST_LOG_FILE")
-        .ok()
-        .map(|s| tracing_subscriber::EnvFilter::builder().parse_lossy(&s))
-        .unwrap_or_else(|| tracing_subscriber::EnvFilter::new("info"));
+/// Backwards compatibility shim: file logger with defaults.
+pub fn init_file_tracer() -> anyhow::Result<WorkerGuard> {
+    init_tracer(TraceOpts {
+        file: Some(FileSinkOpts::default()),
+        json: true,
+        ..Default::default()
+    })
+}
 
-    // Structured JSON logs to file with span context.
-    let fmt_layer = fmt::layer()
+// Loud pretty (text) formatter.
+// Concrete type: FmtLayer<Registry, DefaultFields, Format<Full, SystemTime>, fn() -> Stdout>
+pub fn loud_pretty_layer() -> FmtLayer<Registry> {
+    fmt::layer()
+        .with_span_events(format::FmtSpan::CLOSE)
+        .with_target(true)
+        .with_line_number(true)
+        .with_file(true)
+        .with_ansi(true)
+        .with_thread_ids(true)
+        .with_thread_names(true)
+}
+
+/// JSON / prod formatter
+pub fn loud_layer_json() -> FmtLayer<Registry, format::JsonFields, format::Format<format::Json>> {
+    fmt::layer()
         .json()
         .with_current_span(true)
+        .with_span_events(fmt::format::FmtSpan::CLOSE)
         .with_span_list(true)
         .with_target(true)
         .with_line_number(true)
@@ -83,35 +115,33 @@ pub fn try_init_file_tracer() -> anyhow::Result<non_blocking::WorkerGuard> {
         .with_thread_names(true)
         .with_ansi(false)
         .flatten_event(true)
-        .with_writer(non_blocking_writer);
-
-    let subscriber = Registry::default().with(env_filter).with(fmt_layer);
-
-    // Note: Only the first call to set_global_default succeeds.
-    // Bridge `log` macros into `tracing` (ignore error if already set).
-    let _ = tracing_log::LogTracer::init();
-    tracing::subscriber::set_global_default(subscriber)
-        .map_err(|e| anyhow::anyhow!("failed to set tracing default subscriber: {e}"))?;
-    Ok(guard)
 }
 
-// Backward-compatible wrapper: initialize file tracer, ignoring errors if already set.
-pub fn init_file_tracer() -> non_blocking::WorkerGuard {
-    match try_init_file_tracer() {
-        Ok(guard) => guard,
-        Err(e) => {
-            log::trace!("init_file_tracer skipped: {}", e);
-            // Create a dummy, non-active guard so callers can continue to hold a guard.
-            // We use a rolling appender to construct a guard even if subscriber wasn't set.
-            use tracing_appender::rolling;
-            let (nb, guard) =
-                tracing_appender::non_blocking(rolling::daily("./target/logs", "app.log"));
-            drop(nb); // not used without a layer
-            guard
-        }
+/// Build writer + guard + EnvFilter in one place so stdout/file paths stay aligned.
+/// Build a non-blocking writer (stdout or rolling file) based on TraceOpts.
+pub fn build_nonblocking(opts: &TraceOpts) -> (NonBlocking, WorkerGuard) {
+    let builder = NonBlockingBuilder::default()
+        .buffered_lines_limit(opts.buffer)
+        .lossy(opts.lossy);
+    if let Some(file) = &opts.file {
+        let dir = file.directory.clone();
+        let _ = std::fs::create_dir_all(&dir);
+
+        let file_name = file.file_name.clone();
+        let file_appender = match file.rotation {
+            Rotation::NEVER => tracing_appender::rolling::never(&dir, file_name),
+            Rotation::HOURLY => tracing_appender::rolling::hourly(&dir, file_name),
+            Rotation::DAILY => tracing_appender::rolling::daily(&dir, file_name),
+            Rotation::MINUTELY => tracing_appender::rolling::minutely(&dir, file_name),
+        };
+
+        builder.finish(file_appender)
+    } else {
+        builder.finish(std::io::stdout())
     }
 }
 
+#[deprecated(note = "use init_tracer, this will be removed soon")]
 pub fn init_logger(pattern: &str, deep: bool) {
     // Keep env_logger for users of the `log` facade; add optional JSON output for prod use.
     use ansi_term::Colour;
