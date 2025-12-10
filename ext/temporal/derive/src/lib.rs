@@ -17,6 +17,7 @@ use syn::{ItemFn, parse_macro_input};
 ///   `ActExitValue<T>` result to Temporal workers  
 /// - a **bind()** helper to register the activity with a worker  
 /// - a **workflow-facing constructor** that keeps your original function name (`foo()`)
+/// - sensible defaults, including `start_to_close_timeout: Some(Duration::from_secs(10))`
 ///
 /// # Example (user code)
 ///
@@ -51,6 +52,7 @@ use syn::{ItemFn, parse_macro_input};
 ///             ctx,
 ///             options: temporalio_sdk::ActivityOptions {
 ///                 activity_type: "generate_ids".to_string(),
+///                 start_to_close_timeout: Some(std::time::Duration::from_secs(10)),
 ///                 input,
 ///                 ..temporalio_sdk::ActivityOptions::default()
 ///             },
@@ -112,6 +114,9 @@ use syn::{ItemFn, parse_macro_input};
 /// }
 /// ```
 ///
+/// The generated builder sets `start_to_close_timeout` to 10 seconds by default; override it with
+/// `with_options(...)` if your activity needs more time.
+///
 /// Request serialization errors from `AsJsonPayloadExt` surface as
 /// `ActivityRunError::PayloadEncode`, letting you handle them the same way you handle
 /// resolution/response decode failures in workflow code.
@@ -141,6 +146,7 @@ use syn::{ItemFn, parse_macro_input};
 ///    let _ids = my_activities::generate_ids(ctx, &count)?
 ///        .with_options(ActivityOptions {
 ///            schedule_to_close_timeout: Some(Duration::from_secs(30)),
+///            // keep the generated 10s start_to_close_timeout unless you need longer
 ///            ..Default::default()
 ///        })
 ///        .run()

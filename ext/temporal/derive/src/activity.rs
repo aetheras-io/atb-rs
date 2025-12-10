@@ -142,6 +142,7 @@ pub fn expand_activity(
                     ctx,
                     options: #options_ty {
                         activity_type: #act_id_literal.to_string(),
+                        start_to_close_timeout: Some(::std::time::Duration::from_secs(10)),
                         input,
                         ..#options_ty::default()
                     },
@@ -160,6 +161,7 @@ pub fn expand_activity(
                     ctx,
                     options: #options_ty {
                         activity_type: #act_id_literal.to_string(),
+                        start_to_close_timeout: Some(::std::time::Duration::from_secs(10)),
                         ..#options_ty::default()
                     },
                 })
