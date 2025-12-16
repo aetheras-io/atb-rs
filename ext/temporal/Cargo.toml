@@ -13,7 +13,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 
 prost-wkt-types = "0.7"
-temporalio-client = { git = "https://github.com/temporalio/sdk-core", rev = "87afc298ee7fd8c6172a0fe88ac7d723b474d996" }
-temporalio-common = { git = "https://github.com/temporalio/sdk-core", rev = "87afc298ee7fd8c6172a0fe88ac7d723b474d996" }
-temporalio-sdk = { git = "https://github.com/temporalio/sdk-core", rev = "87afc298ee7fd8c6172a0fe88ac7d723b474d996" }
-temporalio-sdk-core = { git = "https://github.com/temporalio/sdk-core", rev = "87afc298ee7fd8c6172a0fe88ac7d723b474d996" }
+temporalio-client = { git = "https://github.com/temporalio/sdk-core", rev = "b5a473d425e7d63a49f3bbcb08767b9ff46207d0" }
+temporalio-common = { git = "https://github.com/temporalio/sdk-core", rev = "b5a473d425e7d63a49f3bbcb08767b9ff46207d0" }
+temporalio-sdk = { git = "https://github.com/temporalio/sdk-core", rev = "b5a473d425e7d63a49f3bbcb08767b9ff46207d0" }
+temporalio-sdk-core = { git = "https://github.com/temporalio/sdk-core", rev = "b5a473d425e7d63a49f3bbcb08767b9ff46207d0" }
