@@ -99,7 +99,7 @@ impl TaskService {
 
         Box::pin(async move {
             let _ = rx.recv().await;
-            log::info!("TaskService shutdown completed");
+            tracing::info!("TaskService shutdown completed");
         })
     }
 
@@ -129,22 +129,22 @@ impl TaskService {
 
         let mut join_results = None;
 
-        log::info!("TaskService started");
+        tracing::info!("TaskService started");
         let shutdown_triggered = tokio::select! {
             res = &mut join_all => {
                 join_results = Some(res);
                 false
             }
             _ = shutdown => {
-                log::warn!("TaskService shutting down");
+                tracing::warn!("TaskService shutting down");
                 true
             }
         };
-        log::info!("TaskService stopped");
+        tracing::info!("TaskService stopped");
 
         if shutdown_triggered {
             if let Err(err) = notify_shutdown.send(()) {
-                log::debug!("TaskService shutdown broadcast had no active listeners: {err}");
+                tracing::debug!("TaskService shutdown broadcast had no active listeners: {err}");
             }
 
             let res = join_all.await;
@@ -155,9 +155,9 @@ impl TaskService {
             for result in results {
                 if let Err(err) = result {
                     if err.is_panic() {
-                        log::error!("TaskService task panicked during shutdown: {err}");
+                        tracing::error!("TaskService task panicked during shutdown: {err}");
                     } else if err.is_cancelled() {
-                        log::warn!("TaskService task was cancelled during shutdown");
+                        tracing::warn!("TaskService task was cancelled during shutdown");
                     }
                 }
             }
@@ -165,7 +165,7 @@ impl TaskService {
 
         if let Some(mut rx) = shutdown_complete_rx {
             let _ = rx.recv().await;
-            log::info!("TaskService shutdown completed");
+            tracing::info!("TaskService shutdown completed");
         }
 
         // Dropping `notify_shutdown` after the explicit send ensures every subscriber sees the
@@ -236,8 +236,202 @@ where
 pub mod stream {
     use super::*;
 
+    use async_stream::try_stream;
     use async_trait::async_trait;
-    use futures::{FutureExt, Sink, Stream, StreamExt};
+    use futures::{FutureExt, Sink, Stream};
+    use tokio::time::timeout;
+    use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+    use tracing::{debug, info, warn};
+
+    #[derive(thiserror::Error, Debug)]
+    pub enum StreamError {
+        #[error("invalid cursor")]
+        InvalidCursor,
+        #[error("events missing / non-sequential")]
+        SystemViolation,
+        #[error("database error: {0}")]
+        Reads(#[source] anyhow::Error),
+    }
+
+    pub trait Indexed {
+        fn index(&self) -> i64;
+    }
+
+    #[async_trait]
+    pub trait Reads<E>: Clone + Send + Sync + 'static {
+        async fn get_latest_sequence_id(&self) -> anyhow::Result<i64>;
+        async fn get_events_from(
+            &self,
+            start: i64,
+            end: i64,
+            limit: usize,
+        ) -> anyhow::Result<Vec<E>>;
+    }
+
+    /// Strict sequential backfill of (last..=end]
+    async fn backfill_strict<P, E>(
+        store: P,
+        mut last: i64,
+        end: i64,
+        page_limit: usize,
+    ) -> Result<Vec<E>, StreamError>
+    where
+        P: Reads<E>,
+        E: Indexed,
+    {
+        let mut out = Vec::new();
+
+        while last < end {
+            let chunk = store
+                .get_events_from(last, end, page_limit)
+                .await
+                .map_err(StreamError::Reads)?;
+
+            if chunk.is_empty() {
+                return Err(StreamError::SystemViolation);
+            }
+
+            for e in chunk {
+                let idx = e.index();
+                if idx != last + 1 {
+                    return Err(StreamError::SystemViolation);
+                }
+                last = idx;
+                out.push(e);
+                if last >= end {
+                    break;
+                }
+            }
+        }
+
+        Ok(out)
+    }
+
+    /// Yields events `E` in strict sequence:
+    /// - init: optional peek to find the first live event ("tail"), then catch up
+    /// - hot loop: consume live stream; if gaps occur (incl. lag), backfill from durable store
+    ///
+    /// `start_index` is the client's "last read" index (next expected is start_index + 1).
+    ///
+    /// `peek_grace`:
+    /// - Duration::ZERO => only peek if an event is immediately available
+    /// - small duration (e.g. 5ms) => allows tail discovery more often
+    pub fn smart_event_stream<S, E, P>(
+        start_index: i64,
+        inner: S,
+        store: P,
+        page_limit: usize,
+        peek_grace: Duration,
+    ) -> impl Stream<Item = Result<E, StreamError>> + Send
+    where
+        S: Stream<Item = Result<E, BroadcastStreamRecvError>> + Unpin + Send + 'static,
+        E: Indexed + Send + 'static,
+        P: Reads<E>,
+    {
+        use tokio_stream::StreamExt;
+
+        try_stream! {
+            if start_index < 0 {
+                Err(StreamError::InvalidCursor)?;
+            }
+
+            let mut inner = inner.peekable();
+            let mut last = start_index;
+
+            // ---------- init (runs once) ----------
+            let maybe_tail_idx = match timeout(peek_grace, inner.peek()).await {
+                Ok(opt) => opt.and_then(|r| r.as_ref().ok().map(|e| e.index())),
+                Err(_) => None,
+            };
+
+            let catchup_end = if let Some(tail) = maybe_tail_idx {
+                debug!(tail, last, "peeked first live event; catching up before tail");
+                tail - 1
+            } else {
+                let tip = store
+                    .get_latest_sequence_id()
+                    .await
+                    .map_err(StreamError::Reads)?;
+                debug!(tip, last, "no immediate live event; catching up to store tip");
+                tip
+            };
+
+            if catchup_end < last {
+                Err(StreamError::InvalidCursor)?;
+            }
+
+            if catchup_end > last {
+                let events = backfill_strict(store.clone(), last, catchup_end, page_limit).await?;
+                info!(
+                    from = last + 1,
+                    to = catchup_end,
+                    count = events.len(),
+                    "initial catchup from durable store"
+                );
+                for e in events {
+                    // backfill_strict already validated contiguity, but keep `last` accurate
+                    last = e.index();
+                    yield e;
+                }
+            }
+
+            // ---------- hot loop ----------
+            loop {
+                match inner.try_next().await {
+                    Ok(Some(e)) => {
+                        let idx = e.index();
+
+                        if idx <= last {
+                            debug!(idx, last, "duplicate/replay; skipping");
+                            continue;
+                        }
+
+                        if idx != last + 1 {
+                            let missing_from = last + 1;
+                            let missing_to = idx - 1;
+
+                            warn!(
+                                last,
+                                idx,
+                                missing_from,
+                                missing_to,
+                                missing = (missing_to - missing_from + 1),
+                                "gap detected; backfilling from durable store"
+                            );
+
+                            let gap = backfill_strict(store.clone(), last, idx - 1, page_limit).await?;
+                            for ev in gap {
+                                last = ev.index();
+                                yield ev;
+                            }
+
+                            // after backfill, idx must now be last+1
+                            if idx != last + 1 {
+                                Err(StreamError::SystemViolation)?;
+                            }
+                        }
+
+                        last = idx;
+                        yield e;
+                    }
+
+                    Ok(None) => {
+                        info!(last, "live stream ended");
+                        break;
+                    }
+
+                    Err(BroadcastStreamRecvError::Lagged(n)) => {
+                        warn!(
+                            last,
+                            lagged_by = n,
+                            "receiver lagged; will resync on next observed event"
+                        );
+                        continue;
+                    }
+                }
+            }
+        }
+    }
 
     #[async_trait]
     pub trait StreamProcessor: Send + 'static {
@@ -268,53 +462,82 @@ pub mod stream {
         }
 
         pub async fn run(mut self, mut shutdown: Shutdown, _shutdown_complete: ShutdownComplete) {
-            while !shutdown.is_shutdown() {
-                tokio::select! {
-                    _ = async {
-                        let mut connection_attempts = 0;
-                        loop {
-                            log::info!("StreamReactor connecting...");
-                            let stream = match self.processor.connect().await {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    let backoff = exponential_backoff_ms(
-                                        connection_attempts,
-                                        DEFAULT_MAX_BACKOFF_MS
-                                    );
-                                    log::info!(
-                                        "StreamReactor[{}] connect error: {}, attempts: {}, retry in {}ms",
-                                        self.processor.identifier(),
-                                        e,
-                                        connection_attempts,
-                                        backoff
-                                    );
-                                    sleep(Duration::from_millis(backoff)).await;
-                                    connection_attempts += 1;
-                                    continue;
-                                }
-                            };
-                            connection_attempts = 0;
+            use futures::StreamExt;
 
-                            let (_write, mut read) = stream.split();
+            let mut connection_attempts = 0;
 
-                            while let Some(Ok(msg)) = read.next().await {
-                                if let Err(e) = self.processor.process(msg).await {
-                                    log::info!("StreamReactor processor error: {}, restarting", e);
-                                    break;
-                                }
+            'outer: loop {
+                if shutdown.is_shutdown() {
+                    break;
+                }
+
+                tracing::info!("StreamReactor connecting...");
+                let connect_result = tokio::select! {
+                    result = self.processor.connect() => result,
+                    _ = shutdown.recv() => {
+                        tracing::info!("StreamReactor shutting down from signal");
+                        break 'outer;
+                    }
+                };
+
+                let stream = match connect_result {
+                    Ok(stream) => {
+                        connection_attempts = 0;
+                        stream
+                    }
+                    Err(e) => {
+                        let backoff =
+                            exponential_backoff_ms(connection_attempts, DEFAULT_MAX_BACKOFF_MS);
+                        tracing::info!(
+                            "StreamReactor[{}] connect error: {}, attempts: {}, retry in {}ms",
+                            self.processor.identifier(),
+                            e,
+                            connection_attempts,
+                            backoff
+                        );
+                        connection_attempts += 1;
+
+                        tokio::select! {
+                            _ = sleep(Duration::from_millis(backoff)) => {},
+                            _ = shutdown.recv() => {
+                                tracing::info!("StreamReactor shutting down from signal");
+                                break 'outer;
                             }
                         }
-                    } => {
-                        log::info!("StreamReactor processor stopped?");
-                    },
+                        continue;
+                    }
+                };
 
-                    _ = shutdown.recv() => {
-                        log::info!("StreamReactor shutting down from signal");
-                        break;
+                let (_write, mut read) = stream.split();
+
+                loop {
+                    let next = tokio::select! {
+                        item = read.next() => item,
+                        _ = shutdown.recv() => {
+                            tracing::info!("StreamReactor shutting down from signal");
+                            break 'outer;
+                        }
+                    };
+
+                    match next {
+                        Some(Ok(msg)) => {
+                            if let Err(e) = self.processor.process(msg).await {
+                                tracing::info!("StreamReactor processor error: {}, restarting", e);
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            tracing::info!("StreamReactor stream error: {}, reconnecting", e);
+                            break;
+                        }
+                        None => {
+                            tracing::info!("StreamReactor stream ended, reconnecting");
+                            break;
+                        }
                     }
                 }
             }
-            log::info!("StreamReactor stopped")
+            tracing::info!("StreamReactor stopped")
         }
     }
 }
@@ -322,10 +545,10 @@ pub mod stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stream::StreamProcessor;
+    use crate::stream::{Indexed, StreamProcessor};
     use anyhow::anyhow;
     use async_trait::async_trait;
-    use futures::{Sink, Stream};
+    use futures::{Sink, Stream, StreamExt};
     use std::{
         collections::VecDeque,
         fmt,
@@ -413,6 +636,50 @@ mod tests {
             _cx: &mut Context<'_>,
         ) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct TestEvent {
+        idx: i64,
+    }
+
+    impl stream::Indexed for TestEvent {
+        fn index(&self) -> i64 {
+            self.idx
+        }
+    }
+
+    #[derive(Clone)]
+    struct TestStore {
+        tip: i64,
+    }
+
+    #[async_trait]
+    impl stream::Reads<TestEvent> for TestStore {
+        async fn get_latest_sequence_id(&self) -> anyhow::Result<i64> {
+            Ok(self.tip)
+        }
+
+        async fn get_events_from(
+            &self,
+            start: i64,
+            end: i64,
+            limit: usize,
+        ) -> anyhow::Result<Vec<TestEvent>> {
+            if start >= end {
+                return Ok(Vec::new());
+            }
+
+            let mut out = Vec::new();
+            let mut current = start + 1;
+
+            while current <= end && out.len() < limit {
+                out.push(TestEvent { idx: current });
+                current += 1;
+            }
+
+            Ok(out)
         }
     }
 
@@ -659,6 +926,20 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 3);
         assert_eq!(err.kind, "retryable");
         assert_eq!(err.attempt, 3);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn smart_event_stream_backfills_then_reads_live() {
+        let store = TestStore { tip: 3 };
+        let inner = tokio_stream::iter(vec![Ok(TestEvent { idx: 4 }), Ok(TestEvent { idx: 5 })]);
+
+        let stream = stream::smart_event_stream(1, inner, store, 10, Duration::ZERO);
+        let collected: Vec<i64> = stream
+            .map(|item| item.expect("stream error").index())
+            .collect()
+            .await;
+
+        assert_eq!(collected, vec![2, 3, 4, 5]);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

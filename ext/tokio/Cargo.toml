@@ -8,6 +8,8 @@ repository.workspace = true
 [dependencies]
 atb = { path = "../../" }
 
+thiserror.workspace = true
+tracing.workspace = true
 log.workspace = true
 anyhow.workspace = true
 futures.workspace = true
@@ -21,3 +23,5 @@ tokio = { version = "1", features = [
   "sync",
 ] }
 async-trait = "0.1"
+async-stream = "0.3.6"
+tokio-stream = { version = "0.1.17", features = ["sync"] }
