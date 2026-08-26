@@ -1,9 +1,13 @@
 [workspace.package]
 description = "A Tool Box"
 authors = ["Denis Tsai <denistsai@aetheras.io"]
-version = "1.4.10"
+version = "2.0.0"
 edition = "2024"
 repository = "https://github.com/aetheras-io/atb-rs"
+homepage = "https://github.com/aetheras-io/atb-rs"
+readme = "README.md"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
 
 [workspace]
 members = [
@@ -12,13 +16,12 @@ members = [
   "ext/serde",
   "ext/graphql",
   "ext/graphql/derive",
-  "ext/temporal",
-  "ext/temporal/derive",
   # "ext/sqlx",
   "utils/build",
   "utils/cli",
   "utils/fixtures",
   "utils/ai",
+  "utils/logging",
 ]
 
 [workspace.dependencies]
@@ -47,13 +50,20 @@ rand = "0.9"
 # importer, in case some small bug fix happens in the patches
 [package]
 name = "atb"
+description.workspace = true
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
 
 [dependencies]
-atb-fixtures-utils = { path = "./utils/fixtures", optional = true }
+atb-fixtures-utils = { path = "./utils/fixtures", version = "2.0.0", optional = true }
+atb-logging = { path = "./utils/logging", version = "2.0.0" }
 
 log = { workspace = true }
 env_logger = { workspace = true }

@@ -1,18 +1,22 @@
 [package]
 name = "atb-tokio-ext"
+description = "Task lifecycle, shutdown, retry, and networking helpers for Tokio services"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
-atb = { path = "../../" }
-
 thiserror.workspace = true
 tracing.workspace = true
 log.workspace = true
 anyhow.workspace = true
 futures.workspace = true
+rand.workspace = true
 
 tokio = { version = "1", features = [
   "signal",

@@ -118,10 +118,11 @@ impl<T> Builder<T> {
 }
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct NoCustom;
+pub struct NoCustom {}
 
 /// #TODO make a custom error type for JWTs and Claims
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
+#[serde(bound(deserialize = "T: Deserialize<'de> + Serialize"))]
 pub struct Claims<T = NoCustom> {
     #[serde(default)]
     iss: String,
@@ -144,8 +145,36 @@ pub struct Claims<T = NoCustom> {
     #[serde(skip_serializing_if = "Option::is_none")]
     fpt: Option<String>,
 
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        flatten,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_flattened_option"
+    )]
     custom: Option<T>,
+}
+
+fn deserialize_flattened_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Serialize,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value.as_object().is_some_and(serde_json::Map::is_empty) {
+        return Ok(None);
+    }
+
+    let custom = T::deserialize(value).map_err(serde::de::Error::custom)?;
+    let normalized = serde_json::to_value(&custom).map_err(serde::de::Error::custom)?;
+    if normalized.is_null()
+        || normalized
+            .as_object()
+            .is_some_and(serde_json::Map::is_empty)
+    {
+        Ok(None)
+    } else {
+        Ok(Some(custom))
+    }
 }
 
 /// This is only used for serde ```skip_serialize_if```
@@ -234,7 +263,7 @@ where
 // right now we will keep the same optional interface to get things going quickly
 pub fn decode<T>(token: &str, header: &Header, decoding_key: &DecodingKey) -> Result<Claims<T>>
 where
-    T: DeserializeOwned,
+    T: DeserializeOwned + Serialize,
 {
     let (signature, message) = split_two(token.rsplitn(2, '.'))?;
     let (claims, header_part) = split_two(message.rsplitn(2, '.'))?;

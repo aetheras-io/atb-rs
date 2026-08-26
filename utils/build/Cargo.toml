@@ -1,9 +1,14 @@
 [package]
 name = "atb-build-utils"
+description = "Cargo build-script helpers for embedding Git and compiler metadata"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
 rustc_version = "0.4"

@@ -1,6 +1,5 @@
 use std::future::Future;
 
-use atb::helpers::exponential_backoff_ms;
 use futures::future::BoxFuture;
 use tokio::{
     signal,
@@ -9,6 +8,15 @@ use tokio::{
 };
 
 pub const DEFAULT_MAX_BACKOFF_MS: u64 = 32000;
+
+fn exponential_backoff_ms(count: u64, max_backoff_ms: u64) -> u64 {
+    use rand::Rng;
+
+    let exponential = 2_u64.saturating_pow(count.min(u32::MAX.into()) as u32);
+    exponential
+        .saturating_add(rand::rng().random_range(0..1000))
+        .min(max_backoff_ms)
+}
 
 pub type ShutdownComplete = mpsc::Sender<()>;
 
@@ -683,9 +691,11 @@ mod tests {
         }
     }
 
+    type TestStreams = VecDeque<Vec<Result<u8, TestStreamError>>>;
+
     struct TestProcessor {
         id: &'static str,
-        streams: Arc<Mutex<VecDeque<Vec<Result<u8, TestStreamError>>>>>,
+        streams: Arc<Mutex<TestStreams>>,
         process_results: Arc<Mutex<VecDeque<anyhow::Result<()>>>>,
         connect_calls: Arc<AtomicUsize>,
         processed: Arc<Mutex<Vec<u8>>>,

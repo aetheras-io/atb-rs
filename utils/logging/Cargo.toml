@@ -1,0 +1,22 @@
+[package]
+name = "atb-logging"
+description = "Tracing and legacy log initialization helpers for Rust services"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ansi_term.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+env_logger.workspace = true
+log.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true

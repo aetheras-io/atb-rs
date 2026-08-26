@@ -1,9 +1,14 @@
 [package]
 name = "atb-types"
+description = "Shared date, identifier, ownership, and optional JWT types for Aetheras Rust services"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
 thiserror.workspace = true

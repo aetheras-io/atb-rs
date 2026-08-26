@@ -5,11 +5,11 @@ use std::fmt;
 /// `max_backoff_ms` is suggested to be 32000ms to 64000ms by google
 pub fn exponential_backoff_ms(count: u64, max_backoff_ms: u64) -> u64 {
     use rand::Rng;
-    let mut rng = rand::rng();
-    std::cmp::min(
-        2u64.pow(count as u32) + rng.random_range(0..1000),
-        max_backoff_ms,
-    )
+
+    let exponential = 2_u64.saturating_pow(count.min(u32::MAX.into()) as u32);
+    exponential
+        .saturating_add(rand::rng().random_range(0..1000))
+        .min(max_backoff_ms)
 }
 
 pub trait InspectError {

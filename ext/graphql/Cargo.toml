@@ -1,11 +1,15 @@
 [package]
 name = "atb-graphql-ext"
-description.workspace = true
+description = "Pagination helpers and derives for async-graphql services"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
-atb-graphql-derive = { path = "./derive" }
+atb-graphql-derive = { path = "./derive", version = "2.0.0" }
 async-graphql = { version = "7" }
