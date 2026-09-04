@@ -29,7 +29,7 @@ another project and its optional event-sourcing integration currently uses Git d
 
 ```toml
 [dependencies]
-atb = { git = "https://github.com/aetheras-io/atb-rs", tag = "v2.0.0", features = ["eventsourcing", "fixtures"] }
+atb = { git = "https://github.com/aetheras-io/atb-rs", tag = "v2.1.0", features = ["eventsourcing", "fixtures"] }
 ```
 
 ## Temporal

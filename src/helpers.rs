@@ -4,7 +4,7 @@ use std::fmt;
 /// #NOTE, jitter is randomized in the range of 0-1000 ms
 /// `max_backoff_ms` is suggested to be 32000ms to 64000ms by google
 pub fn exponential_backoff_ms(count: u64, max_backoff_ms: u64) -> u64 {
-    use rand::Rng;
+    use rand::RngExt;
 
     let exponential = 2_u64.saturating_pow(count.min(u32::MAX.into()) as u32);
     exponential

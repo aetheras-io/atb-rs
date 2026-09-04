@@ -12,4 +12,4 @@ license.workspace = true
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }

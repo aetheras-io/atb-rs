@@ -11,5 +11,5 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-atb-graphql-derive = { path = "./derive", version = "2.0.0" }
+atb-graphql-derive = { path = "./derive", version = "2.1.0" }
 async-graphql = { version = "7" }

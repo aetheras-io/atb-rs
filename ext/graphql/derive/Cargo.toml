@@ -17,4 +17,4 @@ doctest = false
 [dependencies]
 quote = "1"
 proc-macro2 = "1"
-syn = { version = "2", features = ["full"] }
+syn = { version = "3", features = ["full"] }

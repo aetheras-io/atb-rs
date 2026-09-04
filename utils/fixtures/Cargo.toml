@@ -15,7 +15,7 @@ once_cell.workspace = true
 uuid.workspace = true
 jsonwebtoken = { workspace = true, optional = true }
 
-fake = { version = "4", features = ["derive"] }
+fake = { version = "5", features = ["derive"] }
 
 [features]
 default = []

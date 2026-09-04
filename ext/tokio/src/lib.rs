@@ -10,7 +10,7 @@ use tokio::{
 pub const DEFAULT_MAX_BACKOFF_MS: u64 = 32000;
 
 fn exponential_backoff_ms(count: u64, max_backoff_ms: u64) -> u64 {
-    use rand::Rng;
+    use rand::RngExt;
 
     let exponential = 2_u64.saturating_pow(count.min(u32::MAX.into()) as u32);
     exponential
